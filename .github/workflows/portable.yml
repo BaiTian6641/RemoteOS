@@ -110,7 +110,7 @@ jobs:
             exit 1
           }
           ditto -c -k --sequesterRsrc --keepParent "$app" "$app.zip"
-          shasum -a 256 "$app.zip" > "$app.zip.sha256"
+          (cd output && shasum -a 256 "$(basename "$app").zip" > "$(basename "$app").zip.sha256")
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-portable
@@ -170,7 +170,7 @@ jobs:
           "$image" --appimage-extract >/dev/null
           test -x squashfs-root/usr/bin/remoteos-client
           "$image" --appimage-extract-and-run --help
-          sha256sum "$image" > "$image.sha256"
+          (cd output && sha256sum "$(basename "$image")" > "$(basename "$image").sha256")
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-client-portable

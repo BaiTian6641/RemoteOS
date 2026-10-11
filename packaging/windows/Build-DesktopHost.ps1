@@ -62,6 +62,7 @@ try {
         New-Item -ItemType Directory -Path "$OutputDirectory/libexec" | Out-Null
         Copy-Item "$GStreamerRoot/libexec/gstreamer-1.0" "$OutputDirectory/libexec" -Recurse
     }
+    & "$PSScriptRoot/stage-runtime-dependencies.ps1" -Package $OutputDirectory -SdkRoots @($GStreamerRoot,$OpenSSLRoot)
     foreach ($Base in (@($GStreamerRoot, $OpenSSLRoot) | Select-Object -Unique)) {
         foreach ($Name in @('share/licenses', 'share/doc', 'LICENSE.txt', 'LICENSE', 'COPYING')) {
             if (Test-Path (Join-Path $Base $Name)) {

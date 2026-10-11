@@ -25,8 +25,8 @@ $Saved=$env:PATH
 try {
     $env:PATH="$env:SystemRoot/System32;$env:SystemRoot"
     Remove-Item Env:GST_PLUGIN_PATH,Env:GST_PLUGIN_PATH_1_0,Env:GST_PLUGIN_SCANNER_1_0,Env:GST_REGISTRY_1_0 -ErrorAction SilentlyContinue
-    & "$Package/bin/remoteos-runtime-check.exe"
-    if ($LASTEXITCODE) {throw 'Bundled runtime test failed'}
+    & "$Package/bin/remoteos-runtime-check.exe" 2>&1 | Tee-Object -Variable RuntimeOutput
+    if ($LASTEXITCODE) {throw ("Bundled runtime test failed: " + (($RuntimeOutput | Select-Object -Last 25) -join '; '))}
     & "$Package/bin/remoteos-host.exe" --help
     if ($LASTEXITCODE) {throw 'Host command could not start'}
     $App=Start-Process "$Package/bin/remoteos-host-app.exe" -PassThru
