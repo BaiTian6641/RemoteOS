@@ -21,6 +21,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: sdk-cache
+        with:
+          path: ${{ runner.temp }}/sdk-downloads
+          key: native-sdk-${{ runner.os }}-${{ hashFiles('packaging/native-sdk.lock.json') }}
       - name: Verified SDK and MSVC environment
         shell: pwsh
         run: |
@@ -39,6 +44,11 @@ jobs:
             }
           }
           "REMOTEOS_GSTREAMER_ROOT=$Root" >> $env:GITHUB_ENV
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/sdk-downloads
+          key: native-sdk-${{ runner.os }}-${{ hashFiles('packaging/native-sdk.lock.json') }}
       - name: Native build and portable runtime
         shell: pwsh
         run: |
@@ -68,6 +78,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: sdk-cache
+        with:
+          path: ${{ runner.temp }}/sdk-downloads
+          key: native-sdk-${{ runner.os }}-${{ hashFiles('packaging/native-sdk.lock.json') }}
       - name: Verified universal SDK
         run: |
           python3 scripts/fetch-native-sdk.py macos "$RUNNER_TEMP/sdk-downloads"
@@ -75,6 +90,11 @@ jobs:
           sudo installer -pkg "$RUNNER_TEMP/sdk-downloads/gstreamer-1.0-devel-1.28.7-universal.pkg" -target /
           command -v ninja >/dev/null || brew install ninja
           command -v pkg-config >/dev/null || brew install pkgconf
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/sdk-downloads
+          key: native-sdk-${{ runner.os }}-${{ hashFiles('packaging/native-sdk.lock.json') }}
       - name: Universal app and SDK-free verification
         run: |
           bash packaging/macos/build-host.sh 2>&1 | tee "$RUNNER_TEMP/macos-build.log" || {
@@ -84,7 +104,10 @@ jobs:
           app="output/RemoteOS-Host-$(cat VERSION).app"
           sudo mv /Library/Frameworks/GStreamer.framework "$RUNNER_TEMP/GStreamer-disabled.framework"
           unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GST_REGISTRY_1_0
-          bash packaging/macos/verify-portable.sh "$app"
+          bash packaging/macos/verify-portable.sh "$app" 2>&1 | tee "$RUNNER_TEMP/macos-verify.log" || {
+            tail -40 "$RUNNER_TEMP/macos-verify.log" | while IFS= read -r line; do printf '::error::%s\n' "$line"; done
+            exit 1
+          }
           ditto -c -k --sequesterRsrc --keepParent "$app" "$app.zip"
           shasum -a 256 "$app.zip" > "$app.zip.sha256"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -113,7 +136,10 @@ jobs:
         run: |
           app="output/RemoteOS-Host-$(cat VERSION).app"
           ditto -x -k "$app.zip" output
-          bash packaging/macos/verify-portable.sh "$app"
+          bash packaging/macos/verify-portable.sh "$app" 2>&1 | tee "$RUNNER_TEMP/macos-verify.log" || {
+            tail -40 "$RUNNER_TEMP/macos-verify.log" | while IFS= read -r line; do printf '::error::%s\n' "$line"; done
+            exit 1
+          }
 
   linux-client:
     runs-on: ubuntu-24.04

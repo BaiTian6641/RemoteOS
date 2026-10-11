@@ -45,7 +45,7 @@ def bundle(app,sdk):
                 suffix=dep.split('/GStreamer.framework/Versions/',1)[1].split('/',1)[1];target=root/suffix
             elif dep.startswith('@rpath/'):
                 suffix=dep[len('@rpath/'):];candidates=[root/'lib'/suffix,root/suffix]
-                if '/Versions/' in suffix:candidates.insert(0,framework.parent/suffix)
+                if suffix.startswith('GStreamer.framework/'):candidates.insert(0,framework.parent/suffix)
                 target=next((item for item in candidates if item.exists()),None)
             elif dep.startswith('@loader_path/'):target=(path.parent/dep[len('@loader_path/'):]).resolve()
             else:raise RuntimeError('Unbundled dependency: '+dep+' in '+str(path))

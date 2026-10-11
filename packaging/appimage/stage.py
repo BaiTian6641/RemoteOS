@@ -48,6 +48,10 @@ for folder in (root/'usr/share/doc').iterdir():
   dest=out/'licenses/ubuntu24'/folder.name/'copyright';dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,dest)
 shutil.copytree(root/'usr/share/common-licenses',out/'licenses/common-licenses')
 shutil.copytree(a.repo/'third_party/cpp-httplib',out/'licenses/cpp-httplib',ignore=shutil.ignore_patterns('httplib.h'))
+for directory,name in [('asio','LICENSE_1_0.txt'),('nlohmann','LICENSE.MIT')]:
+ dest=out/'licenses'/directory;dest.mkdir(parents=True,exist_ok=True);shutil.copy2(a.repo/'third_party'/directory/name,dest/name)
+shutil.copy2(a.repo/'third_party/NOTICE.md',out/'licenses/NOTICE.md')
+shutil.copy2(a.repo/'VERSION',out/'VERSION')
 for src in (a.repo/'output/hp2140/target/usr/share/licenses/ibm-plex/LICENSE.txt',a.repo/'packaging/appimage/runtime-lock.json'):
  if src.exists():shutil.copy2(src,out/'licenses'/src.name)
 shutil.copy2(root/'var/lib/dpkg/status',out/'licenses/ubuntu-package-status.txt')

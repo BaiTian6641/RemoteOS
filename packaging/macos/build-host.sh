@@ -26,6 +26,11 @@ cp "$build/remoteos-host" "$build/remoteos-runtime-check" "$output/Contents/MacO
 /usr/libexec/PlistBuddy -c 'Add :LSMinimumSystemVersion string 13.0' "$output/Contents/Info.plist"
 mkdir -p "$output/Contents/Resources"
 cp "$repo/packaging/native-sdk.lock.json" "$repo/VERSION" "$repo/docs/portable-builds.md" "$output/Contents/Resources/"
+for entry in asio/LICENSE_1_0.txt nlohmann/LICENSE.MIT cpp-httplib/LICENSE; do
+ mkdir -p "$output/Contents/Resources/licenses/$(dirname "$entry")"
+ cp "$repo/third_party/$entry" "$output/Contents/Resources/licenses/$entry"
+done
+cp "$repo/third_party/NOTICE.md" "$output/Contents/Resources/licenses/NOTICE.md"
 python3 "$repo/packaging/macos/bundle-runtime.py" "$output" --sdk "$sdk"
 # Sign relocated binaries before enclosing bundles. CI uses ad-hoc signing.
 export REMOTEOS_MAC_SIGN_IDENTITY=${REMOTEOS_MAC_SIGN_IDENTITY:--}

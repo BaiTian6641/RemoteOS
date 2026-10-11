@@ -72,6 +72,12 @@ try {
         }
     }
     Copy-Item "$Repo/docs/portable-builds.md" "$OutputDirectory/README.md"
+    foreach ($Entry in @(@('asio','LICENSE_1_0.txt'), @('nlohmann','LICENSE.MIT'), @('cpp-httplib','LICENSE'))) {
+        $Directory=Join-Path $OutputDirectory "licenses/$($Entry[0])"
+        New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+        Copy-Item "$Repo/third_party/$($Entry[0])/$($Entry[1])" $Directory
+    }
+    Copy-Item "$Repo/third_party/NOTICE.md" "$OutputDirectory/licenses/NOTICE.md"
     @'
 @echo off
 setlocal
