@@ -1,6 +1,10 @@
+Portable Windows and macOS hosts, plus the Linux client AppImage, are built by [GitHub Actions](https://github.com/BaiTian6641/RemoteOS/actions/workflows/portable.yml). Download the executable packages from the latest successful run.
+
 Relative mouse and portable Windows/macOS build workflows are documented in [docs/portable-builds.md](docs/portable-builds.md). Use Client controls → Relative mouse (Blender / 3D) to capture movement; open the controls to release it.
 
-The 0.1.18 diagnostic power/devices release is documented in [docs/power-devices-0.1.18.md](docs/power-devices-0.1.18.md). Windows/macOS native packages remain unqualified.
+The local 0.1.19 HP image is `output/releases/hp2140-relative-mouse-wl-0.1.19/images/remoteos-hp2140.img.gz`. Relative mouse capture is also available in the Linux client AppImage from GitHub Actions. The existing Linux application host 0.1.18 accepts this input protocol.
+
+The 0.1.18 diagnostic power/devices release is documented in [docs/power-devices-0.1.18.md](docs/power-devices-0.1.18.md). Native package startup checks run in CI; physical Windows/macOS capture and permission qualification remain separate hardware tests.
 
 # RemoteOS — HP Mini 2140 appliance prototype
 

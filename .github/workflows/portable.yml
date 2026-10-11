@@ -57,7 +57,8 @@ jobs:
           try { ./packaging/windows/Build-DesktopHost.ps1 -GStreamerRoot $env:REMOTEOS_GSTREAMER_ROOT -OutputDirectory $Package }
           catch { Write-Output ("::error::" + $_.Exception.Message.Replace('%','%25')); throw }
           Move-Item $env:REMOTEOS_GSTREAMER_ROOT "${env:REMOTEOS_GSTREAMER_ROOT}-disabled"
-          ./packaging/windows/verify-portable.ps1 -Package $Package
+          try { ./packaging/windows/verify-portable.ps1 -Package $Package }
+          catch { Write-Output ("::error::" + $_.Exception.Message.Replace('%','%25')); throw }
           Compress-Archive -Path $Package -DestinationPath "$Package.zip" -CompressionLevel Optimal
           $Hash = (Get-FileHash "$Package.zip" -Algorithm SHA256).Hash.ToLower()
           "$Hash  $(Split-Path $Package -Leaf).zip" | Set-Content -Encoding ascii "$Package.zip.sha256"

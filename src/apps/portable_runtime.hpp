@@ -23,6 +23,12 @@ inline void portable_runtime() {
   const auto base=executable.parent_path();
 #ifdef _WIN32
   const auto prefix=base.parent_path();
+  // The out-of-process plugin scanner lives in libexec, so it cannot find
+  // bin's DLLs through its own executable directory. Inherit this process-only
+  // PATH when the GUI is opened directly from Explorer (without the CMD).
+  const auto* inherited=_wgetenv(L"PATH");
+  const auto search=base.wstring()+L";"+(inherited?inherited:L"");
+  SetEnvironmentVariableW(L"PATH",search.c_str());
 #else
   const auto prefix=base.parent_path()/"Frameworks/GStreamer.framework/Versions/1.0";
 #endif

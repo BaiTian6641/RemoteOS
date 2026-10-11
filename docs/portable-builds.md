@@ -88,3 +88,31 @@ screen-sharing permission.
 Primary references: [GStreamer SDKs](https://gstreamer.freedesktop.org/download/),
 [GitHub runner architectures](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 [Microsoft runtime redistribution](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
+
+## HP diagnostic image and local evidence
+
+The local 0.1.19 HP image is `output/releases/hp2140-relative-mouse-wl-0.1.19/images/remoteos-hp2140.img.gz`.
+It retains the Broadcom wl profile and b43 recovery option. The existing Linux
+application host 0.1.18 accepts the relative-motion protocol; upgrading that
+host is not required to enable the new client mouse mode.
+
+The local general client is `output/releases/RemoteOS-Client-0.1.19-x86_64.AppImage`.
+Its Ubuntu 24.04 dependency baseline has a maximum required GLIBC symbol of
+2.38. The package opens setup on a private X11 display with the development
+SDK environment removed. All 1,146 staged asset/library/license hashes were
+verified before distribution.
+
+Validation includes 32 passing native regression tests; three real ELF32 GTK
+session cases against the packaged Linux host (1024×576, 1366×768 and managed
+1366×768); continuous relative movement at the client edge; host recentering;
+held middle-button release; absolute-pointer recovery; rendered setup/overlay
+cursor checks; signed-image and gzip verification; a direct audit of 59 ELF32
+components; and an offline BIOS boot using an N270 CPU model and 2 GB RAM.
+QEMU establishes startup and Intel driver loading, not physical HP rendering
+or performance. Real Blender dragging on the HP remains a hardware check.
+
+The detailed local record is
+`output/releases/hp2140-relative-mouse-wl-0.1.19/validation/validation-summary.json`.
+GitHub records native Windows and macOS build/package checks in the workflow
+run for each source commit. These executable-package checks are distinct from
+physical ScreenCaptureKit/Desktop Duplication and permission qualification.
