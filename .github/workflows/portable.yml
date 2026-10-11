@@ -157,7 +157,10 @@ jobs:
         run: |
           cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DREMOTEOS_WITH_GTK=ON -DREMOTEOS_WITH_MEDIA=ON -DREMOTEOS_WITH_BROWSER=OFF -DREMOTEOS_WITH_DESKTOP_HOST=ON -DREMOTEOS_WITH_WAYLAND_HOST=OFF -DREMOTEOS_WITH_SERVICE_HOST=OFF -DREMOTEOS_BUILD_TESTS=ON
           cmake --build build-ci -j4
-          ctest --test-dir build-ci -R '^(core|packet-pacing|native-host-startup|input-queue-order|client-session-ui|desktop-host-integration|tls-cpu-preference|client-power-policy)$' --output-on-failure
+          ctest --test-dir build-ci -R '^(core|packet-pacing|native-host-startup|input-queue-order|client-session-ui|desktop-host-integration|tls-cpu-preference|client-power-policy)$' --output-on-failure 2>&1 | tee "$RUNNER_TEMP/linux-tests.log" || {
+            tail -60 "$RUNNER_TEMP/linux-tests.log" | while IFS= read -r line; do printf '::error::%s\n' "$line"; done
+            exit 1
+          }
       - name: Portable AppImage
         run: |
           python3 packaging/appimage/stage.py --root / --repo "$PWD" --build "$PWD/build-ci" --output "$PWD/output/RemoteOS-Client.AppDir"
