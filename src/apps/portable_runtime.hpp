@@ -23,17 +23,17 @@ inline void portable_runtime() {
   const auto base=executable.parent_path();
 #ifdef _WIN32
   const auto prefix=base.parent_path();
-  // The out-of-process plugin scanner lives in libexec, so it cannot find
-  // bin's DLLs through its own executable directory. Inherit this process-only
-  // PATH when the GUI is opened directly from Explorer (without the CMD).
-  const auto* inherited=_wgetenv(L"PATH");
-  const auto search=base.wstring()+L";"+(inherited?inherited:L"");
-  SetEnvironmentVariableW(L"PATH",search.c_str());
 #else
   const auto prefix=base.parent_path()/"Frameworks/GStreamer.framework/Versions/1.0";
 #endif
   const auto plugins=prefix/"lib/gstreamer-1.0";
   if(!std::filesystem::is_directory(plugins))return;
+#ifdef _WIN32
+  // The scanner in libexec inherits this process-only DLL search path.
+  const auto* inherited=_wgetenv(L"PATH");
+  const auto search=base.wstring()+L";"+(inherited?inherited:L"");
+  SetEnvironmentVariableW(L"PATH",search.c_str());
+#endif
   auto environment=[](const char* key,const std::filesystem::path& value){
 #ifdef _WIN32
     std::wstring wide(key,key+std::char_traits<char>::length(key));SetEnvironmentVariableW(wide.c_str(),value.wstring().c_str());
@@ -51,11 +51,11 @@ inline void portable_runtime() {
 #endif
   if(std::filesystem::exists(scanner))environment("GST_PLUGIN_SCANNER_1_0",scanner);
 #ifdef _WIN32
-  const auto* cache=std::getenv("LOCALAPPDATA");
-  if(cache){const auto dir=std::filesystem::path(cache)/"RemoteOS/GStreamer";std::filesystem::create_directories(dir);environment("GST_REGISTRY_1_0",dir/"registry-0.1.19.bin");}
+  const auto* cache=_wgetenv(L"LOCALAPPDATA");
+  if(cache){const auto dir=std::filesystem::path(cache)/"RemoteOS/GStreamer";std::error_code ec;std::filesystem::create_directories(dir,ec);if(!ec)environment("GST_REGISTRY_1_0",dir/"registry-0.1.20.bin");}
 #else
   const auto* cache=std::getenv("HOME");
-  if(cache){const auto dir=std::filesystem::path(cache)/"Library/Caches/RemoteOS";std::filesystem::create_directories(dir);environment("GST_REGISTRY_1_0",dir/"registry-0.1.19.bin");}
+  if(cache){const auto dir=std::filesystem::path(cache)/"Library/Caches/RemoteOS";std::error_code ec;std::filesystem::create_directories(dir,ec);if(!ec)environment("GST_REGISTRY_1_0",dir/"registry-0.1.20.bin");}
 #endif
 #endif
 }

@@ -1,3 +1,5 @@
+The 0.1.20 host startup, permission and packet-pacing changes are documented in [docs/host-startup-0.1.20.md](docs/host-startup-0.1.20.md). Native CI checks Tahoe bundle launch and generated host sharing in addition to package startup.
+
 Portable Windows and macOS hosts, plus the Linux client AppImage, are built by [GitHub Actions](https://github.com/BaiTian6641/RemoteOS/actions/workflows/portable.yml). Download the executable packages from the latest successful run.
 
 Relative mouse and portable Windows/macOS build workflows are documented in [docs/portable-builds.md](docs/portable-builds.md). Use Client controls → Relative mouse (Blender / 3D) to capture movement; open the controls to release it.

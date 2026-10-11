@@ -10,8 +10,12 @@
 @interface RemoteOSCapture : NSObject <SCStreamOutput, SCStreamDelegate>
 @property(nonatomic) unsigned displayId;
 @property(nonatomic) std::function<void(remoteos::platform::VideoFrame)> frame;
+@property(nonatomic) std::function<void(std::string)> failure;
 @end
 @implementation RemoteOSCapture
+- (void)stream:(SCStream*)stream didStopWithError:(NSError*)error {
+  if(self.failure)self.failure(error.localizedDescription.UTF8String?:"Screen recording stopped");
+}
 - (void)stream:(SCStream*)stream didOutputSampleBuffer:(CMSampleBufferRef)sample ofType:(SCStreamOutputType)type {
   if(type!=SCStreamOutputTypeScreen||!CMSampleBufferIsValid(sample))return;
   auto* pixel=CMSampleBufferGetImageBuffer(sample);if(!pixel)return;
@@ -44,24 +48,28 @@ class MacDesktop final:public HostPlatform {
   dispatch_queue_t queue_=dispatch_queue_create("org.remoteos.capture",DISPATCH_QUEUE_SERIAL);
   std::atomic<bool> cancelled_{false};std::set<unsigned> held_,buttons_;std::vector<DisplayConfig> layouts_;
   CGEventFlags flags_=0;CGPoint point_=CGPointZero;
+  mutable std::mutex error_mutex_;std::string error_;
 public:
   ~MacDesktop(){stop();}
   Capabilities capabilities()const override {Capabilities c;c.capture=content_!=nil;c.input=AXIsProcessTrusted();c.diagnostics={"macOS application sharing requires Screen Recording and Accessibility permission; login/secure prompts are outside app access", "Audio playback capture is not implemented in this backend"};return c;}
   void prepare(const std::string&)override {
     cancelled_=false;
-    if(!CGPreflightScreenCaptureAccess()){CGRequestScreenCaptureAccess();throw std::runtime_error("Approve Screen Recording in System Settings, then restart RemoteOS Host");}
-    NSDictionary* options=@{(__bridge NSString*)kAXTrustedCheckOptionPrompt:@YES};if(!AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options))throw std::runtime_error("Approve Accessibility in System Settings, then start sharing again");
+    // The containing GUI requests consent on its main thread. A helper must
+    // report missing grants, rather than show prompts from a setup worker.
+    if(!CGPreflightScreenCaptureAccess())throw std::runtime_error("Approve RemoteOS Host in Screen Recording, then quit and reopen the app");
+    if(!AXIsProcessTrusted())throw std::runtime_error("Approve RemoteOS Host in Accessibility, then start sharing again");
     dispatch_semaphore_t ready=dispatch_semaphore_create(0);__block SCShareableContent* found=nil;__block NSString* failure=nil;
     [SCShareableContent getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:YES completionHandler:^(SCShareableContent* c,NSError* e){found=c;failure=e.localizedDescription;dispatch_semaphore_signal(ready);}];
     for(unsigned i=0;i<100;++i){if(cancelled_)throw std::runtime_error("Sharing cancelled");if(dispatch_semaphore_wait(ready,dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC))==0){if(!found)throw std::runtime_error(failure?failure.UTF8String:"No display grant");content_=found;return;}}
     throw std::runtime_error("ScreenCaptureKit permission request timed out");
   }
   void cancel_prepare()noexcept override {cancelled_=true;}
+  std::string session_error()const override {std::lock_guard<std::mutex> lock(error_mutex_);return error_;}
   std::vector<DisplayConfig> desktop_displays()const override {std::vector<DisplayConfig> out;for(SCDisplay* display in content_.displays){if(out.size()>=2)break;const auto bounds=CGDisplayBounds(display.displayID);out.push_back({unsigned(out.size()),unsigned(display.width),unsigned(display.height),int(bounds.origin.x),int(bounds.origin.y),30});}return out;}
   void start(const std::vector<DisplayConfig>& displays,FrameCallback callback)override {
-    stop();layouts_=displays;if(displays.empty()||displays.size()>content_.displays.count)throw std::runtime_error("Display selection is unavailable");
+    stop();{std::lock_guard<std::mutex> lock(error_mutex_);error_.clear();}layouts_=displays;if(displays.empty()||displays.size()>content_.displays.count)throw std::runtime_error("Display selection is unavailable");
     for(size_t i=0;i<displays.size();++i){SCDisplay* display=content_.displays[i];SCContentFilter* filter=[[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]];SCStreamConfiguration* config=[SCStreamConfiguration new];config.width=display.width;config.height=display.height;config.pixelFormat=kCVPixelFormatType_32BGRA;config.minimumFrameInterval=CMTimeMake(1,displays[i].fps);config.queueDepth=3;config.showsCursor=YES;
-      RemoteOSCapture* output=[RemoteOSCapture new];output.displayId=displays[i].id;output.frame=callback;SCStream* stream=[[SCStream alloc] initWithFilter:filter configuration:config delegate:output];NSError* error=nil;if(![stream addStreamOutput:output type:SCStreamOutputTypeScreen sampleHandlerQueue:queue_ error:&error])throw std::runtime_error(error.localizedDescription.UTF8String);
+      RemoteOSCapture* output=[RemoteOSCapture new];output.displayId=displays[i].id;output.frame=callback;output.failure=[this](std::string message){std::lock_guard<std::mutex> lock(error_mutex_);error_=std::move(message);};SCStream* stream=[[SCStream alloc] initWithFilter:filter configuration:config delegate:output];NSError* error=nil;if(![stream addStreamOutput:output type:SCStreamOutputTypeScreen sampleHandlerQueue:queue_ error:&error])throw std::runtime_error(error.localizedDescription.UTF8String);
       dispatch_semaphore_t ready=dispatch_semaphore_create(0);__block NSError* startError=nil;[stream startCaptureWithCompletionHandler:^(NSError* e){startError=e;dispatch_semaphore_signal(ready);}];if(dispatch_semaphore_wait(ready,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC))||startError)throw std::runtime_error(startError?startError.localizedDescription.UTF8String:"Capture startup timed out");[streams_ addObject:stream];[outputs_ addObject:output];
     }
   }

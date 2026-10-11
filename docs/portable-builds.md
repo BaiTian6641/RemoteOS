@@ -1,4 +1,6 @@
-# Portable RemoteOS builds and relative mouse — 0.1.19
+# Portable RemoteOS builds and relative mouse — 0.1.20
+
+Host startup and permissions were revised in 0.1.20; see [host-startup-0.1.20.md](host-startup-0.1.20.md). The 0.1.19 HP client remains compatible.
 
 The client adds **Relative mouse (Blender / 3D)** in Client controls. On the HP,
 short-press the power button, select this option, then Resume. In the Linux

@@ -34,13 +34,13 @@ try {
         $RemoteOSConfigureOutput | Select-Object -Last 25 | ForEach-Object { Write-Output ("::error::" + $_.ToString().Replace('%','%25')) }
         throw "CMake configuration failed"
     }
-    & cmake --build $BuildDirectory --target remoteos-host remoteos-host-app remoteos-runtime-check 2>&1 | Tee-Object -Variable RemoteOSBuildOutput
+    & cmake --build $BuildDirectory --target remoteos-host remoteos-host-app remoteos-runtime-check remoteos-pacing-check 2>&1 | Tee-Object -Variable RemoteOSBuildOutput
     if ($LASTEXITCODE) {
         $RemoteOSBuildOutput | Where-Object { $_ -match 'error|FAILED|fatal' } | Select-Object -Last 25 | ForEach-Object { Write-Output ("::error::" + $_.ToString().Replace('%','%25')) }
         throw "Host application build failed"
     }
     New-Item -ItemType Directory -Path "$OutputDirectory/bin", "$OutputDirectory/lib/gstreamer-1.0" | Out-Null
-    Copy-Item "$BuildDirectory/remoteos-host.exe", "$BuildDirectory/remoteos-host-app.exe", "$BuildDirectory/remoteos-runtime-check.exe" "$OutputDirectory/bin"
+    Copy-Item "$BuildDirectory/remoteos-host.exe", "$BuildDirectory/remoteos-host-app.exe", "$BuildDirectory/remoteos-runtime-check.exe", "$BuildDirectory/remoteos-pacing-check.exe" "$OutputDirectory/bin"
     Copy-Item "$GStreamerRoot/bin/*.dll" "$OutputDirectory/bin"
     Copy-Item "$OpenSSLRoot/bin/*.dll" "$OutputDirectory/bin"
     $Plugins = @('coreelements','app','udp','rtp','rtpmanager','dtls','srtp','libav','audioconvert','audioresample','opus','videoconvertscale','videoparsersbad','jpeg','videotestsrc','wasapi','wasapi2')

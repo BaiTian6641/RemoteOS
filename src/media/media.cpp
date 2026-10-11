@@ -1,5 +1,6 @@
 #include "remoteos/media.hpp"
 #include "packet_pacer.hpp"
+#include "deadline_wait.hpp"
 #include "raw_frame.hpp"
 #include "mpeg2_freshness.hpp"
 #include <algorithm>
@@ -104,6 +105,7 @@ struct Pipe {
   std::mutex jitter_mutex;
   std::vector<GstElement *> jitters;
   Display display;
+  media_detail::DeadlineWaiter packet_wait;
   int source_width = 0, source_height = 0;
   std::atomic<bool> verified{false}, recovery_requested{false};
   std::atomic<std::uint64_t> frames{0};
@@ -155,7 +157,7 @@ GstFlowReturn send_packet(GstBuffer *buffer, Pipe *pipe) {
   if (pipe->stopping) return GST_FLOW_FLUSHING;
   const auto deadline = pipe->pacer->reserve(gst_buffer_get_size(buffer), std::chrono::steady_clock::now());
   while (!pipe->stopping && std::chrono::steady_clock::now() < deadline)
-    std::this_thread::sleep_until(std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(2)));
+    pipe->packet_wait.until(std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(2)));
   if (pipe->stopping) return GST_FLOW_FLUSHING;
   GstMapInfo map{};
   if (!gst_buffer_map(buffer, &map, GST_MAP_READ)) return GST_FLOW_ERROR;

@@ -68,7 +68,7 @@ public:
     Desktop():original_(GetThreadDesktop(GetCurrentThreadId())){}
     ~Desktop(){if(current_){SetThreadDesktop(original_);CloseDesktop(current_);}}
     bool attach() {
-        HDESK next=OpenInputDesktop(0,FALSE,DESKTOP_READOBJECTS|DESKTOP_WRITEOBJECTS|DESKTOP_SWITCHDESKTOP);
+        HDESK next=OpenInputDesktop(0,FALSE,DESKTOP_READOBJECTS|DESKTOP_WRITEOBJECTS);
         if(!next) throw std::runtime_error("Cannot open active desktop; secure desktop needs LocalSystem helper");
         wchar_t name[256]{}; DWORD needed=0;
         if(!GetUserObjectInformationW(next,UOI_NAME,name,sizeof(name),&needed)) {
@@ -150,6 +150,21 @@ class WindowsHost final : public HostPlatform {
 public:
     explicit WindowsHost(bool desktop = false) : desktop_mode_(desktop) {}
     ~WindowsHost()override{stop();}
+    void prepare(const std::string&) override {
+        if(!desktop_mode_)return;
+        DWORD session=0;
+        if(!ProcessIdToSessionId(GetCurrentProcessId(),&session)||session==0)
+            throw std::runtime_error("Start RemoteOS Host as the logged-in desktop user, outside Session 0");
+        LPWSTR state=nullptr;DWORD bytes=0;
+        if(!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE,session,WTSConnectState,&state,&bytes))
+            throw std::runtime_error("Cannot inspect the interactive Windows session (Win32 "+std::to_string(GetLastError())+")");
+        const bool active=bytes>=sizeof(WTS_CONNECTSTATE_CLASS)&&*reinterpret_cast<WTS_CONNECTSTATE_CLASS*>(state)==WTSActive;
+        WTSFreeMemory(state);
+        if(!active)throw std::runtime_error("The Windows user session is disconnected; reconnect it before sharing");
+        HDESK desktop=OpenInputDesktop(0,FALSE,DESKTOP_READOBJECTS|DESKTOP_WRITEOBJECTS);
+        if(!desktop)throw std::runtime_error("Desktop access denied (Win32 "+std::to_string(GetLastError())+"). Unlock Windows and close the UAC prompt, then try sharing again");
+        CloseDesktop(desktop);prepared_=true;
+    }
     std::vector<DisplayConfig> desktop_displays() const override {
         if (!desktop_mode_) return {};
         std::vector<DisplayConfig> displays;
@@ -180,9 +195,9 @@ public:
         }
     }
     Capabilities capabilities()const override {
-        Capabilities c; c.input=true;
+        Capabilities c; c.input=!desktop_mode_||prepared_;
         DWORD session=0; ProcessIdToSessionId(GetCurrentProcessId(),&session);
-        c.capture=session==WTSGetActiveConsoleSessionId();
+        c.capture=desktop_mode_?prepared_:session==WTSGetActiveConsoleSessionId();
         c.virtual_displays=!desktop_mode_ && !environment(L"REMOTEOS_DISPLAY_0").empty() && !environment(L"REMOTEOS_DISPLAY_1").empty();
         if(!c.capture)c.diagnostics.emplace_back("Run host helper in the active console session");
         if(!system_identity())c.diagnostics.emplace_back("Current identity cannot capture Windows secure desktop");
@@ -419,7 +434,7 @@ private:
         catch(...){std::lock_guard<std::mutex> lock(error_mutex_);error_="Capture callback failed";running_=false;}
     }
     std::vector<std::unique_ptr<Output>> outputs_;
-    bool desktop_mode_ = false;
+    bool desktop_mode_ = false, prepared_ = false;
     std::vector<std::pair<std::wstring, DEVMODEW>> changed_modes_;
     FrameCallback callback_;
     std::atomic<bool> running_{false};std::thread worker_;

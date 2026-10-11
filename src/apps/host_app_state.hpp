@@ -56,7 +56,7 @@ struct HostState {
     code = random_pairing_pin();
     const auto code_file = directory / "pairing-code";
     write_private_file(code_file, code + "\n");
-    Json configuration{{"identity_dir", identity.string()}, {"pairing_code_file", code_file.string()},
+    Json configuration{{"identity_dir", identity.u8string()}, {"pairing_code_file", code_file.u8string()},
                        {"bind", bind}, {"port", port}, {"application_mode", true}, {"usb_enabled", false},
                        {"desktop_source", desktop_source}, {"resource_port", port<=65533?port+2:port-2},
                        {"independent_environment", independent_environment},

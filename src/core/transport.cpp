@@ -1,5 +1,6 @@
 #include "transport.hpp"
 #include "crypto_policy.hpp"
+#include "remoteos/identity.hpp"
 #include <filesystem>
 #include <openssl/x509.h>
 
@@ -29,11 +30,11 @@ void configure(asio::ssl::context &c, const std::string &dir) {
   // must not override an Atom client's software-friendly ChaCha preference.
   SSL_CTX_clear_options(c.native_handle(), SSL_OP_CIPHER_SERVER_PREFERENCE);
   SSL_CTX_set_mode(c.native_handle(), SSL_MODE_RELEASE_BUFFERS);
-  c.use_certificate_chain_file(
-      (std::filesystem::path(dir) / "certificate.pem").string());
-  c.use_private_key_file(
-      (std::filesystem::path(dir) / "private-key.pem").string(),
-      asio::ssl::context::pem);
+  const auto identity = std::filesystem::u8path(dir);
+  const auto certificate = read_private_file(identity / "certificate.pem");
+  const auto key = read_private_file(identity / "private-key.pem");
+  c.use_certificate_chain(asio::buffer(certificate));
+  c.use_private_key(asio::buffer(key), asio::ssl::context::pem);
   c.set_verify_mode(asio::ssl::verify_peer |
                     asio::ssl::verify_fail_if_no_peer_cert);
   // Trust comes from explicit application pairing/pinning, never arbitrary CAs.

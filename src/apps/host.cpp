@@ -15,6 +15,9 @@
 #include <openssl/crypto.h>
 #include <set>
 #include <thread>
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -417,7 +420,13 @@ struct Server {
       limit_video_bandwidth(displays, session_bandwidth);
       match_resolution = j.value("match_host_resolution", false);
       if (application_mode) {
-        desktop_sources = platform->desktop_displays();
+        desktop_sources.clear();
+        if (test_source) {
+          for (std::size_t i=0;i<displays.size();++i) {
+            const auto& d=displays[i];
+            desktop_sources.push_back({unsigned(i),unsigned(d.width),unsigned(d.height),d.x,d.y,unsigned(d.fps)});
+          }
+        } else desktop_sources = platform->desktop_displays();
         if (desktop_sources.empty()) throw std::runtime_error("No existing desktop monitor is available");
         if (!independent_desktop && displays.size() > desktop_sources.size()) displays.resize(desktop_sources.size());
       }
@@ -445,7 +454,7 @@ struct Server {
         cfg.push_back({unsigned(i), unsigned(d.width), unsigned(d.height), d.x,
                        d.y, unsigned(d.fps)});
       }
-      if (application_mode && (match_resolution || independent_desktop)) {
+      if (application_mode && !test_source && (match_resolution || independent_desktop)) {
         try {
           platform->match_desktop(cfg);
           desktop_sources = platform->desktop_displays();
@@ -947,7 +956,7 @@ struct Server {
           if (source == "kde-native")
             platform->set_virtual_display_size(config.value("virtual_width", 1024u), config.value("virtual_height", 576u));
           native_resolution = source == "kde-native" || independent_desktop;
-          platform->prepare(config.value("portal_parent_window", std::string{}));
+          if (!test_source) platform->prepare(config.value("portal_parent_window", std::string{}));
           const auto capabilities = platform->capabilities();
           if (!test_source && (!capabilities.capture || !capabilities.input)) {
             error = "Desktop capture and input are unavailable";
@@ -1104,9 +1113,24 @@ int main(int argc, char **argv) {
       return 0;
     }
     Server server;
+#ifdef __APPLE__
+    // ScreenCaptureKit and permission callbacks may target the main queue.
+    // Keep its run loop alive while Asio runs on the server worker.
+    std::atomic<bool> done{false};std::exception_ptr failure;
+    CFRunLoopSourceContext context{};
+    const auto keepalive=CFRunLoopSourceCreate(nullptr,0,&context);
+    if(!keepalive)throw std::runtime_error("Cannot initialize macOS callback run loop");
+    CFRunLoopAddSource(CFRunLoopGetMain(),keepalive,kCFRunLoopDefaultMode);
+    std::thread worker([&]{try{server.run(cfg);}catch(...){failure=std::current_exception();}done=true;CFRunLoopWakeUp(CFRunLoopGetMain());});
+    while(!done) CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.02,true);
+    worker.join();CFRunLoopRemoveSource(CFRunLoopGetMain(),keepalive,kCFRunLoopDefaultMode);CFRelease(keepalive);
+    if(failure)std::rethrow_exception(failure);
+#else
     server.run(cfg);
+#endif
     return 0;
   } catch (const std::exception &e) {
+    std::cout << Json{{"event","sharing-failed"},{"message",e.what()}}.dump() << std::endl;
     std::cerr << "remoteos-host: " << e.what() << '\n';
     return 1;
   }

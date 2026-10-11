@@ -3,6 +3,7 @@ param([Parameter(Mandatory=$true)][string]$Package)
 $ErrorActionPreference='Stop'
 $Package=(Resolve-Path $Package).Path
 $Dumpbin=(Get-Command dumpbin -ErrorAction Stop).Source
+$Python=(Get-Command python -ErrorAction Stop).Source
 $Manifest=Get-Content "$Package/build-manifest.json" -Raw | ConvertFrom-Json
 foreach ($Entry in $Manifest.files) {
     if ((Get-FileHash (Join-Path $Package $Entry.path)).Hash.ToLower() -ne $Entry.sha256) { throw "Package hash mismatch: $($Entry.path)" }
@@ -27,11 +28,19 @@ try {
     Remove-Item Env:GST_PLUGIN_PATH,Env:GST_PLUGIN_PATH_1_0,Env:GST_PLUGIN_SCANNER_1_0,Env:GST_REGISTRY_1_0 -ErrorAction SilentlyContinue
     & "$Package/bin/remoteos-runtime-check.exe" 2>&1 | Tee-Object -Variable RuntimeOutput
     if ($LASTEXITCODE) {throw ("Bundled runtime test failed: " + (($RuntimeOutput | Select-Object -Last 25) -join '; '))}
+    & "$Package/bin/remoteos-pacing-check.exe" 2>&1 | Tee-Object -Variable PacingOutput
+    if ($LASTEXITCODE) {throw ("High-resolution packet pacing failed: " + ($PacingOutput -join '; '))}
+    & $Python "$PSScriptRoot/../../scripts/check-native-host.py" "$Package/bin/remoteos-host.exe" 2>&1 | Tee-Object -Variable HostOutput
+    if ($LASTEXITCODE) {throw ("Application host loopback test failed: " + ($HostOutput -join '; '))}
     & "$Package/bin/remoteos-host.exe" --help
     if ($LASTEXITCODE) {throw 'Host command could not start'}
     $App=Start-Process "$Package/bin/remoteos-host-app.exe" -PassThru
     Start-Sleep -Seconds 3
+    $App.Refresh()
     if ($App.HasExited) {throw 'Portable host GUI exited during startup'}
+    if (!$App.MainWindowHandle) {throw 'Portable host GUI did not create a visible window'}
+    & $Python "$PSScriptRoot/../../scripts/check-windows-host-gui.py" ($App.MainWindowHandle.ToInt64()) 2>&1 | Tee-Object -Variable GuiOutput
+    if ($LASTEXITCODE) {$App.CloseMainWindow() | Out-Null;throw ("Host Start sharing UI failed: " + ($GuiOutput -join '; '))}
     $null=$App.CloseMainWindow()
     if (!$App.WaitForExit(5000)) {$App.Kill();throw 'Host GUI did not close normally'}
 } finally {$env:PATH=$Saved}

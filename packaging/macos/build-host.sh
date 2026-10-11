@@ -17,10 +17,10 @@ cmake -S "$repo" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
  -DREMOTEOS_WITH_MEDIA=ON -DREMOTEOS_WITH_GTK=OFF -DREMOTEOS_WITH_BROWSER=OFF \
  -DREMOTEOS_WITH_SERVICE_HOST=OFF -DREMOTEOS_WITH_WAYLAND_HOST=OFF -DREMOTEOS_WITH_DESKTOP_HOST=ON \
  -DREMOTEOS_BUILD_HOST_APP=ON -DREMOTEOS_BUILD_TESTS=OFF
-cmake --build "$build" --target remoteos-host remoteos-host-app remoteos-runtime-check -j4
+cmake --build "$build" --target remoteos-host remoteos-host-app remoteos-runtime-check remoteos-pacing-check -j4
 mkdir -p "$(dirname "$output")"
 cp -R "$build/remoteos-host-app.app" "$output"
-cp "$build/remoteos-host" "$build/remoteos-runtime-check" "$output/Contents/MacOS/"
+cp "$build/remoteos-host" "$build/remoteos-runtime-check" "$build/remoteos-pacing-check" "$output/Contents/MacOS/"
 /usr/libexec/PlistBuddy -c 'Add :NSPrincipalClass string NSApplication' "$output/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :NSScreenCaptureUsageDescription string RemoteOS shares your desktop with your paired client.' "$output/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :LSMinimumSystemVersion string 13.0' "$output/Contents/Info.plist"
