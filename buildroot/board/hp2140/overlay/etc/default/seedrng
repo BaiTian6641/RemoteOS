@@ -1,0 +1,3 @@
+# The state filesystem starts empty in every distributed image. Preserve only
+# the seed generated on this device; never bake a provisioned state into images.
+SEEDRNG_ARGS="--seed-dir=/state/seedrng"

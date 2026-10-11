@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+start)
+    # Network availability must never hold up the graphical setup screen.
+    mkdir -p /run/remoteos /run/wpa_supplicant
+    start-stop-daemon -S -b -m -p /run/remoteos-network.pid \
+        -x /usr/sbin/remoteos-network
+    ;;
+stop)
+    start-stop-daemon -K -p /run/remoteos-network.pid || true
+    ;;
+*) echo "Usage: $0 start|stop" >&2; exit 2 ;;
+esac

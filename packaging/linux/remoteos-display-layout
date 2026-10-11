@@ -1,0 +1,93 @@
+#!/usr/bin/python3
+"""Apply only explicitly configured EVDI outputs; preserve their old state."""
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+CONFIG = Path('/etc/remoteos/displays.json')
+STATE = Path('/run/remoteos/display-state.json')
+
+def xrandr(*args):
+    return subprocess.check_output(['/usr/bin/xrandr', *args], text=True, timeout=10)
+
+def configured():
+    config = json.loads(CONFIG.read_text())
+    if not isinstance(config, dict) or not config.get('outputs'):
+        raise ValueError('Configure the two EVDI output names in /etc/remoteos/displays.json')
+    return config
+
+def restore():
+    if not STATE.exists():
+        return
+    saved = json.loads(STATE.read_text())
+    for entry in saved:
+        args = ['--output', entry['output']]
+        if entry['mode']:
+            args += ['--mode', entry['mode'], '--pos', entry['position']]
+        else:
+            args += ['--off']
+        xrandr(*args)
+    STATE.unlink()
+
+def apply(specs):
+    config = configured()
+    if not 1 <= len(specs) <= 2:
+        raise ValueError('One or two display specifications required')
+    if STATE.exists():
+        restore()
+    # Explicit provider IDs are provisioned on the qualified host. Never guess
+    # from similarly named modesetting providers and alter a physical GPU.
+    for pair in config.get('providers', []):
+        if set(pair) != {'sink', 'source'}:
+            raise ValueError('Provider entry needs sink and source')
+        xrandr('--setprovideroutputsource', str(pair['sink']), str(pair['source']))
+    query = xrandr('--props')
+    rows = {}
+    current = None
+    for line in query.splitlines():
+        match = re.match(r'^(\S+) (connected|disconnected)(?: primary)?(?: (\d+x\d+)\+(\d+)\+(\d+))?', line)
+        if match:
+            current = match[1]
+            rows[current] = {'output': current, 'mode': match[3], 'position': f'{match[4]}x{match[5]}', 'edid': ''}
+        elif current and re.match(r'^\s+[0-9a-fA-F]{32}\s*$', line):
+            rows[current]['edid'] += line.strip()
+    previous, operations = [], []
+    for spec in specs:
+        ident, width, height, x, y = map(int, spec.split(':'))
+        if not 320 <= width <= 1920 or not 200 <= height <= 1080 or not 0 <= x <= 3840 or not 0 <= y <= 2160:
+            raise ValueError('Invalid display dimensions')
+        output = config['outputs'].get(str(ident))
+        if output not in rows:
+            raise ValueError(f'Configured virtual output for id {ident} is unavailable')
+        row = rows[output]
+        edid = bytes.fromhex(row.pop('edid'))
+        if len(edid) < 128 or edid[8:10] != bytes([0x49, 0xaf]) or edid[10] != ident or sum(edid[:128]) % 256:
+            raise ValueError(f'{output} does not identify itself as the expected RemoteOS EVDI display')
+        previous.append(row)
+        operations += ['--output', output, '--mode', f'{width}x{height}', '--pos', f'{x}x{y}']
+    STATE.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    fd = os.open(STATE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        json.dump(previous, stream)
+    try:
+        xrandr(*operations)
+    except Exception:
+        restore()
+        raise
+
+if __name__ == '__main__':
+    try:
+        if os.geteuid() != 0:
+            raise PermissionError('The layout helper is restricted to root')
+        if len(sys.argv) >= 2 and sys.argv[1] == 'apply':
+            apply(sys.argv[2:])
+        elif sys.argv[1:] == ['restore']:
+            restore()
+        else:
+            raise ValueError('Usage: remoteos-display-layout apply ID:WIDTH:HEIGHT:X:Y [...] | restore')
+    except Exception as error:
+        print(f'remoteos-display-layout: {error}', file=sys.stderr)
+        sys.exit(1)

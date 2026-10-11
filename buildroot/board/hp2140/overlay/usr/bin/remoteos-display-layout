@@ -1,0 +1,35 @@
+#!/bin/sh
+# Xorg without a desktop environment needs an explicit layout after VGA hotplug.
+# Run as the UI user with its authenticated DISPLAY, never parse this as shell.
+set -eu
+query=$(xrandr --query)
+internal=$(printf '%s\n' "$query" | awk '$2 == "connected" && $1 ~ /^(LVDS|eDP)/ { print $1; exit }')
+external=$(printf '%s\n' "$query" | awk '$1 ~ /^VGA/ && ($2 == "connected" || $2 == "disconnected") { print $1; exit }')
+[ -n "$internal" ] || exit 0
+if [ -z "$external" ]; then
+    exec xrandr --output "$internal" --auto --primary
+fi
+external_connected=$(printf '%s\n' "$query" | awk -v name="$external" '$1 == name { print $2; exit }')
+if [ "$external_connected" != connected ]; then
+    exec xrandr --output "$internal" --auto --primary --output "$external" --off
+fi
+# Only choose EDID-advertised progressive modes within the v1 output bounds.
+# xrandr lists preferred modes first. Prefer 1080p when available, otherwise
+# keep its first supported lower mode. Interlaced suffixes are excluded.
+mode=$(printf '%s\n' "$query" | awk -v name="$external" '
+    $1 == name && $2 == "connected" { in_output=1; next }
+    /^[^[:space:]]/ { in_output=0 }
+    in_output && $1 ~ /^[0-9]+x[0-9]+$/ {
+        split($1, dimensions, "x")
+        if (dimensions[1] <= 1920 && dimensions[2] <= 1080) {
+            if (first == "") first=$1
+            if ($1 == "1920x1080") fullhd=$1
+        }
+    }
+    END { if (fullhd != "") print fullhd; else print first }
+')
+if [ -z "$mode" ]; then
+    logger -t remoteos-display 'VGA has no advertised progressive mode within 1920x1080; leaving it disabled'
+    exec xrandr --output "$internal" --auto --primary --output "$external" --off
+fi
+exec xrandr --output "$internal" --auto --primary --output "$external" --mode "$mode" --below "$internal"

@@ -1,0 +1,1 @@
+remoteos 600 remoteos 600 ! /state/home /bin/sh audio,video,input,render RemoteOS client

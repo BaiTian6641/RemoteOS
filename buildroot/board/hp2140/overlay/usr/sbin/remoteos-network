@@ -1,0 +1,149 @@
+#!/bin/sh
+# Retry late discovery/radio availability without delaying the local UI.
+set -u
+sysnet=${REMOTEOS_NETWORK_SYSFS:-/sys/class/net}
+runtime=${REMOTEOS_NETWORK_RUNTIME:-/run/remoteos}
+profiles=${REMOTEOS_NETWORK_PROFILES:-/state/network}
+control=${REMOTEOS_NETWORK_CONTROL:-/run/wpa_supplicant}
+reports=${REMOTEOS_NETWORK_REPORTS:-/state/reports}
+interval=${REMOTEOS_NETWORK_INTERVAL:-4}
+umask 077
+mkdir -p "$runtime/network" "$profiles" "$control" || exit 1
+exec 9>"$runtime/network.lock"
+flock -n 9 || exit 0
+
+child_running() {
+    [ -r "$1" ] || return 1
+    read -r child < "$1"
+    case "$child" in ''|*[!0-9]*) return 1 ;; esac
+    # Only act on this worker's own live children, never a reused PID.
+    [ "$(awk '$1 == "PPid:" { print $2 }' "/proc/$child/status" 2>/dev/null)" = "$$" ] || return 1
+    ! grep -q '^State:.*Z' "/proc/$child/status" 2>/dev/null
+}
+record_wpa_failure() {
+    failed_iface=$1
+    failed_pid=$2
+    result=0
+    wait "$failed_pid" 2>/dev/null || result=$?
+    # Preserve only the first failure in an outage, rather than writing the
+    # flash partition on every retry. A healthy control socket resets it.
+    marker="$runtime/network/reported-failure-$failed_iface"
+    [ ! -e "$marker" ] || return 0
+    : > "$marker"
+    [ ! -e "$runtime/ephemeral-state" ] && [ -d "$reports" ] && [ -w "$reports" ] || return 0
+    temporary=$(mktemp "$reports/.wifi-failure.XXXXXX") || return 0
+    {
+        printf 'Wi-Fi service exited: interface=%s code=%s\n' "$failed_iface" "$result"
+        date -u
+        # syslogd already bounds the entire RAM ring to 64 KiB. Keep at most
+        # 16 KiB of normal supplicant diagnostics in this private report. Never
+        # enable key/debug logging, and omit credential/network identifiers.
+        logread 2>/dev/null | awk '
+            /wpa_supplicant/ && tolower($0) !~ /psk|password|passphrase|ssid|identity|secret/ {print}
+        ' | tail -c 16384
+    } > "$temporary"
+    chmod 600 "$temporary"
+    mv -f "$temporary" "$reports/latest-wifi-failure.txt"
+}
+cleanup() {
+    trap - EXIT INT TERM HUP
+    for pidfile in "$runtime/network/"*.pid; do
+        if child_running "$pidfile"; then kill "$child" 2>/dev/null || true; fi
+    done
+    wait 2>/dev/null || true
+    rm -f "$runtime/network/"*.pid "$runtime/network-status.tmp"
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+ip link set lo up >/dev/null 2>&1 || true
+ntpd -n -p time.cloudflare.com -p pool.ntp.org 9>&- >/dev/null 2>&1 &
+printf '%s\n' "$!" > "$runtime/network/ntpd.pid"
+
+while :; do
+    : > "$runtime/network-status.tmp"
+    found=0
+    for path in "$sysnet"/*; do
+        [ -d "$path" ] || continue
+        iface=${path##*/}
+        case "$iface" in lo|*[!a-zA-Z0-9_.-]*) continue ;; esac
+        [ -e "$path/device" ] || continue
+        found=1
+        kind=ethernet
+        [ ! -d "$path/wireless" ] || kind=wifi
+        if ! ip link set "$iface" up >/dev/null 2>&1; then
+            printf '%s %s link-unavailable\n' "$iface" "$kind" >> "$runtime/network-status.tmp"
+            rm -f "$runtime/network/association-$iface"
+            continue
+        fi
+        if [ "$kind" = wifi ]; then
+            # Interactive traffic must not wait for the old adapter's power
+            # save wake-up cycle. Reapply after an interface/driver restart;
+            # unsupported drivers remain usable and report the failure.
+            iw dev "$iface" set power_save off >/dev/null 2>&1 || true
+            config="$profiles/$iface.conf"
+            if [ ! -f "$config" ]; then
+                printf 'ctrl_interface=DIR=%s GROUP=remoteos\nupdate_config=1\n' "$control" > "$config.tmp"
+                mv "$config.tmp" "$config"
+            fi
+            if ! child_running "$runtime/network/wpa-$iface.pid"; then
+                if [ -r "$runtime/network/wpa-$iface.pid" ]; then
+                    read -r previous_pid < "$runtime/network/wpa-$iface.pid"
+                    case "$previous_pid" in
+                        ''|*[!0-9]*) ;;
+                        *) record_wpa_failure "$iface" "$previous_pid" ;;
+                    esac
+                fi
+                # -s is a compiled feature, verified by the image packaging
+                # check. BusyBox syslogd stores its output in a bounded RAM ring.
+                wpa_supplicant -i "$iface" -c "$config" -s 9>&- >/dev/null 2>&1 &
+                printf '%s\n' "$!" > "$runtime/network/wpa-$iface.pid"
+            fi
+            # A newly selected AP may use a different subnet. Restart the owned
+            # DHCP child after association changes instead of keeping the old
+            # lease until its renewal timer. BSSID/profile IDs stay private.
+            association=$(wpa_cli -p "$control" -i "$iface" status 2>/dev/null |
+                awk -F= '$1=="wpa_state" {state=$2} $1=="bssid" {bssid=$2} $1=="id" {id=$2}
+                    END {if (state=="COMPLETED" && bssid!="") print bssid ":" id;
+                         else if (state!="" && state!="COMPLETED") print "-"}')
+            if [ "$association" = - ]; then
+                rm -f "$runtime/network/association-$iface"
+                association=
+            fi
+            previous=$(cat "$runtime/network/association-$iface" 2>/dev/null || true)
+            if [ -n "$association" ] && [ "$association" != "$previous" ]; then
+                if child_running "$runtime/network/dhcp-$iface.pid"; then
+                    kill -TERM "$child" 2>/dev/null || true
+                    wait "$child" 2>/dev/null || true
+                fi
+                rm -f "$runtime/network/dhcp-$iface.pid"
+                printf '%s\n' "$association" > "$runtime/network/association-$iface"
+            fi
+        fi
+        if ! child_running "$runtime/network/dhcp-$iface.pid"; then
+            # Foreground mode in our background child retries indefinitely;
+            # there is exactly one DHCP child per discovered interface.
+            udhcpc -f -R -i "$iface" -S 9>&- >/dev/null 2>&1 &
+            printf '%s\n' "$!" > "$runtime/network/dhcp-$iface.pid"
+        fi
+        state=ready
+        if [ "$kind" = wifi ] && [ ! -S "$control/$iface" ]; then state=waiting-for-supplicant; fi
+        if [ "$kind" = wifi ] && [ "$state" = ready ]; then
+            rm -f "$runtime/network/reported-failure-$iface"
+        fi
+        printf '%s %s %s\n' "$iface" "$kind" "$state" >> "$runtime/network-status.tmp"
+    done
+    [ "$found" -ne 0 ] || printf 'none none waiting-for-hardware\n' > "$runtime/network-status.tmp"
+    chmod 644 "$runtime/network-status.tmp"
+    mv "$runtime/network-status.tmp" "$runtime/network-status.txt"
+    # Remove children for unplugged devices. Other interfaces keep their leases.
+    for pidfile in "$runtime/network/"*.pid; do
+        base=${pidfile##*/}
+        case "$base" in wpa-*|dhcp-*) iface=${base#*-}; iface=${iface%.pid} ;; *) continue ;; esac
+        [ ! -e "$sysnet/$iface" ] || continue
+        if child_running "$pidfile"; then kill "$child" 2>/dev/null || true; fi
+        rm -f "$pidfile"
+        rm -f "$runtime/network/association-$iface"
+    done
+    sleep "$interval" &
+    wait "$!" || true
+done

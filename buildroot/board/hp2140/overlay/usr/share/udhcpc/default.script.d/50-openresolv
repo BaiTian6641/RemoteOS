@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+bound|renew)
+    {
+        if [ -n "${search:-}" ]; then
+            printf 'search %s\n' "$search"
+        elif [ -n "${domain:-}" ]; then
+            printf 'search %s\n' "$domain"
+        fi
+        for server in ${dns:-}; do
+            printf 'nameserver %s\n' "$server"
+        done
+    } | resolvconf -a "$interface"
+    ;;
+deconfig) resolvconf -d "$interface" -f ;;
+esac

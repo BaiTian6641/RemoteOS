@@ -1,0 +1,19 @@
+#!/bin/sh
+# Polling connector status costs very little on this generation of hardware.
+# RandR changes notify GTK after a CRTC is assigned to the connected VGA output.
+set -eu
+previous=unset
+while :; do
+    state=$(
+        for connector in /sys/class/drm/card*-*/status; do
+            [ -r "$connector" ] || continue
+            printf '%s ' "$connector"
+            cat "$connector"
+        done
+    )
+    if [ "$state" != "$previous" ]; then
+        remoteos-display-layout || logger -t remoteos-display 'Unable to apply display layout; inspect xrandr and hardware report'
+        previous=$state
+    fi
+    sleep 2
+done

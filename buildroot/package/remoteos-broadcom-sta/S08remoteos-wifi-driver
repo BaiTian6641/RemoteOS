@@ -1,0 +1,93 @@
+#!/bin/sh
+# Run before S10udev coldplug. This file exists only in the optional wl image.
+set -eu
+[ "${1:-}" = start ] || exit 0
+mkdir -p /run/modprobe.d /run/remoteos
+selected=b43
+for argument in $(cat /proc/cmdline); do
+    case "$argument" in
+        remoteos.wifi_driver=*) selected=${argument#remoteos.wifi_driver=} ;;
+    esac
+done
+status=/run/remoteos/wifi-driver-status
+log=/run/remoteos/wifi-driver-load.log
+: > "$log"
+pci=
+result=not-loaded
+detail=
+
+report() {
+    active=none
+    if [ -n "$pci" ] && [ -L "$pci/driver" ]; then
+        active=$(basename "$(readlink "$pci/driver")")
+    fi
+    {
+        printf 'selected=%s\nresult=%s\npci_driver=%s\n' "$selected" "$result" "$active"
+        printf 'kernel=%s\npackage=6.30.223.271-32\ndetail=%s\n' "$(uname -r)" "$detail"
+    } > "$status"
+    if [ -d /state/reports ]; then
+        cp "$status" /state/reports/latest-wifi-driver.txt
+        [ ! -f "$log" ] || cp "$log" /state/reports/latest-wifi-driver-load.txt
+    fi
+    printf 'RemoteOS Wi-Fi driver: selected=%s active=%s %s (%s)\n' "$selected" "$active" "$result" "$detail"
+}
+
+# Always block the broad wl PCI alias unless this boot explicitly selects it.
+printf 'blacklist wl\n' > /run/modprobe.d/remoteos-wifi-driver.conf
+case "$selected" in
+    b43|wl) ;;
+    *) selected=invalid; result=failed; detail='Invalid driver choice; use the b43 recovery boot entry'; report; exit 0 ;;
+esac
+for candidate in /sys/bus/pci/devices/*; do
+    [ -r "$candidate/vendor" ] && [ -r "$candidate/device" ] || continue
+    if [ "$(cat "$candidate/vendor")" = 0x14e4 ] && [ "$(cat "$candidate/device")" = 0x432b ]; then
+        pci=$candidate
+        break
+    fi
+done
+if [ -z "$pci" ]; then
+    result=unavailable
+    detail='BCM4322 14e4:432b was not detected; wl remains blocked'
+    report
+    exit 0
+fi
+if [ "$selected" = wl ]; then
+    # Volatile and exclusive to this boot. Never blacklist these in the base image.
+    cat > /run/modprobe.d/remoteos-wifi-driver.conf <<'CONFIG'
+blacklist b43
+blacklist b43legacy
+blacklist brcmsmac
+blacklist ssb
+blacklist bcma
+CONFIG
+fi
+if [ -L "$pci/driver" ]; then
+    active=$(basename "$(readlink "$pci/driver")")
+    case "$selected:$active" in
+        wl:wl|b43:b43-pci-bridge) ;;
+        *) result=failed
+           detail='Another driver already owns BCM4322; reboot into the desired boot entry'
+           report
+           exit 0 ;;
+    esac
+fi
+if modprobe "$selected" > "$log" 2>&1; then
+    result=loaded
+    detail='Driver loaded; network setup follows'
+    if [ ! -L "$pci/driver" ]; then
+        result=failed
+        detail='Driver did not bind BCM4322; reboot into b43 recovery or use Ethernet'
+    else
+        active=$(basename "$(readlink "$pci/driver")")
+        case "$selected:$active" in
+            wl:wl|b43:b43-pci-bridge) ;;
+            *) result=failed
+               detail='Unexpected BCM4322 binding; reboot into b43 recovery or use Ethernet' ;;
+        esac
+    fi
+else
+    result=failed
+    detail='Driver load failed; reboot into b43 recovery or use Ethernet'
+fi
+# Never force-unload a driver or fall back automatically after a failed wl boot.
+report

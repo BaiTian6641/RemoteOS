@@ -1,0 +1,23 @@
+config BR2_PACKAGE_REMOTEOS_BROADCOM_STA
+	bool "RemoteOS BCM4322 proprietary wl diagnostic"
+	depends on BR2_i386
+	depends on BR2_LINUX_KERNEL
+	depends on BR2_INIT_BUSYBOX
+	depends on BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV
+	depends on !BR2_STATIC_LIBS
+	select BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
+	select BR2_PACKAGE_KMOD
+	select BR2_PACKAGE_KMOD_TOOLS
+	help
+	  Optional Broadcom STA 6.30.223.271 with Debian revision 32
+	  compatibility patches, for the HP 2140 BCM4322 (14e4:432b).
+	  Requires the qualified 32-bit Linux 6.12.109 configuration.
+
+	  Contains a proprietary binary; see the package README and retained
+	  Broadcom license before distributing an image. The wrapper is built
+	  against the image kernel. No kernel security policy is disabled.
+
+	  Use hp2140_wl_defconfig for a wl diagnostic boot choice and a b43
+	  recovery choice. Without an explicit wl boot argument, wl is blocked.
+
+	  https://sources.debian.org/src/broadcom-sta/6.30.223.271-32/

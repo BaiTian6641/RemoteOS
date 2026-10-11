@@ -1,0 +1,25 @@
+From: RemoteOS maintainers
+Subject: [PATCH] IPC: serialize unconditional NowPlayingInfo fullscreenMode
+
+NowPlayingInfo stores its MediaPlayerEnums::VideoFullscreenMode field even
+when ENABLE(VIDEO) is false. The serialization description still conditionally
+omits that field and names MediaPlayer's alias. On i386 the generated layout
+check correctly fails (80 versus 84 bytes); 64-bit padding hid the mismatch.
+
+Use the actual always-defined field type and serialize it in all builds.
+Retain the type, size and member-order validation checks.
+
+Upstream: Not submitted (appliance compatibility patch)
+--- a/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in
++++ b/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in
+@@ -5598,9 +5598,7 @@ struct WebCore::NowPlayingInfo {
+     bool isPlaying;
+     bool allowsNowPlayingControlsVisibility;
+     bool isVideo;
+-#if ENABLE(VIDEO)
+-    WebCore::MediaPlayer::VideoFullscreenMode fullscreenMode;
+-#endif
++    WebCore::MediaPlayerEnums::VideoFullscreenMode fullscreenMode;
+ }
+ 
+ struct WebCore::PlatformMediaCapabilitiesVideoConfiguration {

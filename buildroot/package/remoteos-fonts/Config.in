@@ -1,0 +1,4 @@
+config BR2_PACKAGE_REMOTEOS_FONTS
+	bool "RemoteOS IBM Plex Sans fonts"
+	help
+	  IBM Plex Sans regular and semibold from the upstream 6.4.0 release.

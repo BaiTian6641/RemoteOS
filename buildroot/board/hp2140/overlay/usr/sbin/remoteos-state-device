@@ -1,0 +1,22 @@
+#!/bin/sh
+# Resolve state from the disk containing the actually mounted root partition.
+# Optional read-only path arguments support isolated sysfs fixture tests.
+set -eu
+mountinfo=${1:-/proc/self/mountinfo}
+sysblock=${2:-/sys/dev/block}
+devroot=${3:-/dev}
+root_id=$(awk '$5 == "/" { id=$3 } END { print id }' "$mountinfo")
+case "$root_id" in ''|*[!0-9:]*) exit 1 ;; esac
+root_path=$(readlink -f "$sysblock/$root_id")
+[ -f "$root_path/partition" ] && [ "$(cat "$root_path/partition")" = 1 ] || exit 1
+disk=${root_path%/*}
+state=
+for number in "$disk"/*/partition; do
+    [ -f "$number" ] || continue
+    [ "$(cat "$number")" = 2 ] || continue
+    [ -z "$state" ] || exit 1
+    path=${number%/partition}
+    state="$devroot/${path##*/}"
+done
+[ -n "$state" ] || exit 1
+printf '%s\n' "$state"

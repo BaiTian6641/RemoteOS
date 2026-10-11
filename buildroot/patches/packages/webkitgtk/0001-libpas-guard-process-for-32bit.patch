@@ -1,0 +1,79 @@
+From: RemoteOS maintainers
+Subject: [PATCH] libpas: guard disabled allocator implementation includes
+
+The new pas_process.c translation unit omits the LIBPAS_ENABLED guard used
+by the other libpas implementation files. On i386 with USE_SYSTEM_MALLOC,
+libpas is deliberately disabled but this file still includes pas_utils.h,
+whose GCC pair implementation requires unsupported __uint128_t.
+The segregated-directory source has the same issue with a header included
+before its existing guard; move that include inside the guarded region.
+WTF Threading must also guard the newly introduced libpas-only include and
+shutdown call when that allocator is disabled. The helper always returns
+false on this Linux target.
+
+Apply the existing translation-unit guard convention; do not change the
+allocator implementation or re-enable libpas on unsupported platforms.
+
+Upstream: Not submitted (appliance compatibility patch)
+--- a/Source/bmalloc/libpas/src/libpas/pas_process.c
++++ b/Source/bmalloc/libpas/src/libpas/pas_process.c
+@@ -23,6 +23,10 @@
+  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#include "pas_config.h"
++
++#if LIBPAS_ENABLED
++
+ #include "pas_process.h"
+ 
+ #if PAS_OS(WINDOWS)
+@@ -60,3 +64,5 @@ bool pas_process_is_shutting_down(void)
+ }
+ 
+ #endif /* PAS_OS(WINDOWS) */
++
++#endif /* LIBPAS_ENABLED */
+--- a/Source/bmalloc/libpas/src/libpas/pas_segregated_directory.c
++++ b/Source/bmalloc/libpas/src/libpas/pas_segregated_directory.c
+@@ -24,10 +24,10 @@
+  */
+ 
+ #include "pas_config.h"
+-#include "pas_segregated_view_kind.h"
+ 
+ #if LIBPAS_ENABLED
+ 
++#include "pas_segregated_view_kind.h"
+ #include "pas_segregated_directory.h"
+ 
+ #include "pas_heap_lock.h"
+--- a/Source/WTF/wtf/Threading.cpp
++++ b/Source/WTF/wtf/Threading.cpp
+@@ -28,7 +28,6 @@
+ #include <wtf/Threading.h>
+ 
+ #include <bmalloc/BPlatform.h>
+-#include <bmalloc/pas_process.h>
+ #include <cstring>
+ #include <wtf/DateMath.h>
+ #include <wtf/FastMalloc.h>
+@@ -48,6 +47,7 @@
+ 
+ #if BENABLE(LIBPAS)
+ #define USE_LIBPAS_THREAD_SUSPEND_LOCK 1
++#include <bmalloc/pas_process.h>
+ #include <bmalloc/pas_thread_suspend_lock.h>
+ #endif
+ #if USE(TZONE_MALLOC)
+@@ -301,8 +301,10 @@
+ 
+ void Thread::didExit()
+ {
++#if BENABLE(LIBPAS)
+     if (pas_process_is_shutting_down())
+         return;
++#endif
+ 
+     allThreads().remove(*this);
+ 

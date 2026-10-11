@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+start)
+    /usr/sbin/remoteos-hardware-report /run/remoteos/hardware.txt >/dev/null 2>&1 &
+    if [ -x /usr/sbin/remoteos-supervisor ]; then
+        start-stop-daemon -S -b -m -p /run/remoteos-supervisor.pid -x /usr/sbin/remoteos-supervisor
+    fi
+    # Cookie authentication remains enabled and the X server never listens on TCP.
+    export XAUTHORITY=/run/remoteos/Xauthority
+    touch "$XAUTHORITY"
+    xauth -f "$XAUTHORITY" add :0 . "$(mcookie)"
+    # xauth atomically replaces the file with mode0600; grant UI read access
+    # only after writing the final cookie inode.
+    chmod 640 "$XAUTHORITY"
+    chown root:remoteos "$XAUTHORITY"
+    start-stop-daemon -S -b -m -p /run/remoteos-graphical.pid \
+        -x /usr/sbin/remoteos-graphical
+    ;;
+stop)
+    start-stop-daemon -K -p /run/remoteos-graphical.pid || true
+    start-stop-daemon -K -p /run/remoteos-supervisor.pid || true
+    ;;
+*) exit 2 ;;
+esac

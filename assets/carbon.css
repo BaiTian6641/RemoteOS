@@ -1,0 +1,59 @@
+/* Native GTK3 interpretation of Carbon's Gray 100 theme and 8px grid. */
+* { font-family: "IBM Plex Sans", "DejaVu Sans", sans-serif; font-size: 15px; }
+window, .background { background-color: #161616; color: #f4f4f4; }
+.remoteos-header { background-color: #262626; padding: 16px 24px; border-bottom: 1px solid #393939; }
+.remoteos-title { font-size: 28px; font-weight: 400; }
+.remoteos-subtitle { color: #c6c6c6; }
+.remoteos-card { background-color: #262626; padding: 24px; }
+.remoteos-status { padding: 16px 24px; background-color: #262626; color: #c6c6c6; }
+button { background-image: none; border-radius: 0; border: 1px solid #6f6f6f; background-color: #393939; color: #f4f4f4; padding: 12px 16px; box-shadow: none; }
+button:hover { background-color: #4c4c4c; }
+button:active { background-color: #525252; }
+button.primary { background-color: #0f62fe; border-color: #0f62fe; }
+button.primary:hover { background-color: #0353e9; }
+button.danger { background-color: #da1e28; border-color: #da1e28; }
+button:disabled { color: #8d8d8d; background-color: #393939; border-color: #393939; }
+button:focus, entry:focus, combobox:focus { outline: 2px solid #ffffff; outline-offset: -4px; }
+entry { color: #f4f4f4; background-color: #393939; border: none; border-bottom: 1px solid #8d8d8d; border-radius: 0; padding: 12px; caret-color: #ffffff; }
+entry selection { background-color: #0f62fe; color: white; }
+combobox button { background-color: #393939; }
+notebook header { background-color: #161616; border: none; }
+notebook tab { background-image: none; background-color: #161616; padding: 12px 24px; color: #c6c6c6; border-bottom: 2px solid #393939; }
+notebook tab:checked { background-color: #262626; color: #f4f4f4; border-bottom-color: #78a9ff; }
+progressbar progress { background-color: #0f62fe; }
+.remoteos-overlay { padding: 32px; background-color: #262626; border: 1px solid #525252; }
+.remoteos-warning { color: #f1c21b; }
+
+notebook tab label { color: #c6c6c6; }
+notebook tab:checked label { color: #f4f4f4; }
+notebook stack { border: 1px solid #393939; }
+
+textview, textview text { background-color: #262626; color: #f4f4f4; }
+.remoteos-report { font-family: "IBM Plex Mono", "DejaVu Sans Mono", monospace; font-size: 13px; }
+
+/* First-run pages share the same native controls as returning-user settings. */
+.remoteos-progress { padding: 12px 24px 0; }
+.remoteos-step { padding: 8px 0 10px; border-top: 2px solid #525252; color: #a8a8a8; }
+.remoteos-step.current { border-top-color: #0f62fe; color: #f4f4f4; font-weight: 600; }
+.remoteos-step.done { border-top-color: #78a9ff; color: #c6c6c6; }
+.remoteos-setup-footer { padding: 12px 24px; border-top: 1px solid #393939; }
+.remoteos-section-title { font-size: 18px; font-weight: 600; }
+.remoteos-first-run .remoteos-header { padding: 8px 24px; }
+.remoteos-first-run .remoteos-title { font-size: 24px; }
+.remoteos-first-run .remoteos-status { padding: 8px 24px; }
+.remoteos-first-run entry { padding: 8px 12px; }
+.remoteos-first-run button { padding: 10px 16px; }
+expander { color: #f4f4f4; }
+expander:focus { outline: 2px solid #ffffff; outline-offset: -2px; }
+/* Popup menus can inherit a desktop theme independently of the main window. */
+menu, menuitem { background-color: #262626; color: #f4f4f4; }
+menu { border: 1px solid #525252; }
+menuitem { padding: 8px 12px; }
+menuitem:hover, menuitem:selected { background-color: #393939; }
+menuitem label { color: inherit; }
+menuitem:disabled { color: #8d8d8d; }
+list { background-color: #262626; color: #f4f4f4; }
+list row { background-color: #262626; border-bottom: 1px solid #393939; }
+list row:hover { background-color: #333333; }
+list row:selected { background-color: #393939; border-left: 3px solid #0f62fe; }
+list row:focus, checkbutton:focus { outline: 2px solid #ffffff; outline-offset: -2px; }

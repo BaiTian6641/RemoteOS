@@ -1,0 +1,27 @@
+From: RemoteOS maintainers <remoteos@localhost>
+Subject: [PATCH] dtls: require DTLS 1.2 for appliance media
+
+OpenSSL's generic DTLS_method can allow DTLS 1.0. The appliance already
+requires OpenSSL 3 and does not support legacy DTLS peers. Fail closed
+when the minimum cannot be applied.
+
+Upstream: Not submitted [product transport policy]
+
+--- a/ext/dtls/gstdtlsagent.c
++++ b/ext/dtls/gstdtlsagent.c
+@@ -190,6 +190,15 @@
+ 
+     g_return_if_reached ();
+   }
++  /* RemoteOS supports authenticated DTLS-SRTP with DTLS 1.2 or newer only. */
++  if (!SSL_CTX_set_min_proto_version (priv->ssl_context, DTLS1_2_VERSION)) {
++    GST_ERROR_OBJECT (self, "Unable to enforce DTLS 1.2 minimum");
++    ERR_print_errors_cb (ssl_warn_cb, self);
++    SSL_CTX_free (priv->ssl_context);
++    priv->ssl_context = NULL;
++    g_return_if_reached ();
++  }
++
+   /* If any non-fatal issues happened, print them out and carry on */
+   if (ERR_peek_error ()) {
+     ERR_print_errors_cb (ssl_warn_cb, self);

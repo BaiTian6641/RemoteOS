@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+export HOME=/state/home USER=remoteos LOGNAME=remoteos
+remoteos-display-layout || logger -t remoteos-display 'Initial display layout failed'
+remoteos-display-watch &
+watcher=$!
+trap 'kill "$watcher" 2>/dev/null || true' EXIT HUP INT TERM
+dbus-run-session -- remoteos-client

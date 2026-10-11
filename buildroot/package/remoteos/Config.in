@@ -1,0 +1,10 @@
+config BR2_PACKAGE_REMOTEOS
+	bool "remoteos"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_8
+	depends on BR2_PACKAGE_LIBGTK3
+	depends on BR2_PACKAGE_GSTREAMER1
+	depends on BR2_PACKAGE_WEBKITGTK
+	select BR2_PACKAGE_OPENSSL
+	help
+	  RemoteOS client shell, diagnostic tools and host protocol programs.

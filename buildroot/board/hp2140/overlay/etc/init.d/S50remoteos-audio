@@ -1,0 +1,15 @@
+#!/bin/sh
+# ALSA starts with muted controls on some HDA codecs. Use its hardware-specific
+# defaults on first boot and persist actual user mixer settings after shutdown.
+set -eu
+case "${1:-}" in
+start)
+    if [ -s /state/alsa/asound.state ]; then
+        alsactl -f /state/alsa/asound.state restore || alsactl init || true
+    else
+        alsactl init || true
+    fi
+    ;;
+stop) alsactl -f /state/alsa/asound.state store || true ;;
+*) exit 2 ;;
+esac

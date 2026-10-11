@@ -1,0 +1,68 @@
+From: RemoteOS maintainers <remoteos@localhost>
+Subject: [PATCH] sna: provide an opt-in software cursor fallback
+
+The HP 2140 can receive pointer input while its cursor remains invisible.
+Provide an explicit SWCursor option to use the existing mi software sprite
+without wrapping it with the SNA hardware-cursor implementation. The
+hardware cursor remains the upstream default. Rendering, KMS modesetting,
+and textured XVideo are unchanged.
+
+sna_cursors_init already has failure paths that leave cursor.info NULL;
+the cursor reload and shutdown paths support that state. Skip only this
+optional initialization, after the mandatory miDCInitialize call succeeds.
+
+Upstream: Not submitted [hardware workaround pending physical qualification]
+
+--- a/src/intel_options.h
++++ b/src/intel_options.h
+@@ -39,6 +39,7 @@
+ 	OPTION_VIRTUAL,
+ 	OPTION_TEAR_FREE,
+ 	OPTION_CRTC_PIXMAPS,
++	OPTION_SW_CURSOR,
+ #endif
+ #ifdef USE_UXA
+ 	OPTION_FALLBACKDEBUG,
+--- a/src/intel_options.c
++++ b/src/intel_options.c
+@@ -35,6 +35,7 @@
+ 	{OPTION_VIRTUAL,	"VirtualHeads",	OPTV_INTEGER,	{0},	0},
+ 	{OPTION_TEAR_FREE,	"TearFree",	OPTV_BOOLEAN,	{0},	0},
+ 	{OPTION_CRTC_PIXMAPS,	"PerCrtcPixmaps", OPTV_BOOLEAN,	{0},	0},
++	{OPTION_SW_CURSOR,	"SWCursor",	OPTV_BOOLEAN,	{0},	0},
+ #endif
+ #ifdef USE_UXA
+ 	{OPTION_FALLBACKDEBUG,	"FallbackDebug",OPTV_BOOLEAN,	{0},	0},
+--- a/src/sna/sna_driver.c
++++ b/src/sna/sna_driver.c
+@@ -1212,7 +1212,13 @@
+ 	if (!miDCInitialize(screen, xf86GetPointerScreenFuncs()))
+ 		return FALSE;
+ 
+-	if (sna_cursors_init(screen, sna))
++	/* miDCInitialize above supplies the software sprite. Do not install
++	 * the hardware wrapper when its cursor plane is unusable. This leaves
++	 * SNA rendering and textured XVideo acceleration enabled. */
++	if (xf86ReturnOptValBool(sna->Options, OPTION_SW_CURSOR, FALSE))
++		xf86DrvMsg(scrn->scrnIndex, X_CONFIG,
++			   "Software cursor enabled (SWCursor)\n");
++	else if (sna_cursors_init(screen, sna))
+ 		xf86DrvMsg(scrn->scrnIndex, X_INFO, "HW Cursor enabled\n");
+ 
+ 	/* Must force it before EnterVT, so we are in control of VT and
+--- a/man/intel.man
++++ b/man/intel.man
+@@ -127,6 +127,13 @@
+ .IP
+ Default: acceleration is enabled.
+ .TP
++.BI "Option \*qSWCursor\*q \*q" boolean \*q
++Use the X server software cursor with the SNA acceleration method. This
++can work around an invisible hardware cursor without disabling SNA or
++textured XVideo acceleration. This option is a RemoteOS downstream addition.
++.IP
++Default: disabled.
++.TP
+ .BI "Option \*qPresent\*q \*q" boolean \*q
+ Enable use of hardware counters and flow control for the Present extension.
+ .IP

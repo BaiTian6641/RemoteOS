@@ -1,0 +1,134 @@
+#!/bin/sh
+# Own Xorg/client lifetime; keep repeated failures bounded and recoverable.
+set -u
+runtime=${REMOTEOS_GRAPHICAL_RUNTIME:-/run/remoteos}
+reports=${REMOTEOS_GRAPHICAL_REPORTS:-/state/reports}
+xinit=${REMOTEOS_GRAPHICAL_XINIT:-/usr/bin/xinit}
+console=${REMOTEOS_GRAPHICAL_CONSOLE:-/dev/console}
+cmdline=${REMOTEOS_GRAPHICAL_CMDLINE:-/proc/cmdline}
+delay=${REMOTEOS_GRAPHICAL_RETRY_DELAY:-2}
+umask 077
+mkdir -p "$runtime/graphics" || exit 1
+exec 9>"$runtime/graphical.lock"
+flock -n 9 || exit 0
+child= reader= sleeper=
+fifo="$runtime/graphics/output-$$"
+mkfifo "$fifo" || exit 1
+status() {
+    printf '%s\n' "$*" > "$runtime/graphical-status.tmp"
+    chmod 644 "$runtime/graphical-status.tmp"
+    mv "$runtime/graphical-status.tmp" "$runtime/graphical-status.txt"
+}
+session_pids() {
+    wanted_sid=$1
+    for entry in /proc/[0-9]*/stat; do
+        IFS= read -r record 2>/dev/null < "$entry" || continue
+        # comm may contain spaces or parentheses; fields after its final ')' are
+        # state, parent PID, process group, session ID, ... . Skip zombies.
+        fields=${record##*) }
+        set -- $fields
+        [ "$#" -ge 4 ] || continue
+        [ "$4" = "$wanted_sid" ] && [ "$1" != Z ] || continue
+        pid=${entry#/proc/}; pid=${pid%/stat}
+        printf '%s\n' "$pid"
+    done
+}
+stop_session() {
+    stop_sid=$1
+    remaining=$2
+    members=$(session_pids "$stop_sid")
+    [ -z "$members" ] || kill -TERM $members 2>/dev/null || true
+    while [ "$remaining" -gt 0 ]; do
+        live=0
+        # Probe only the captured members during the grace period. Repeatedly
+        # scanning all of /proc makes a nominal timeout grow on busy systems.
+        for member in $members; do
+            process_live "$member" && live=1
+        done
+        [ "$live" -ne 0 ] || break
+        sleep 0.05
+        remaining=$((remaining - 1))
+    done
+    members=$(session_pids "$stop_sid")
+    [ -z "$members" ] || kill -KILL $members 2>/dev/null || true
+    # Never wait unboundedly on a process stuck in uninterruptible kernel I/O.
+}
+process_live() {
+    IFS= read -r record 2>/dev/null < "/proc/$1/stat" || return 1
+    fields=${record##*) }
+    set -- $fields
+    [ "$1" != Z ]
+}
+cleanup() {
+    trap - EXIT INT TERM HUP
+    [ -z "$sleeper" ] || kill -TERM "$sleeper" 2>/dev/null || true
+    [ -z "$child" ] || stop_session "$child" 60
+    [ -z "$reader" ] || stop_session "$reader" 5
+    rm -f "$fifo" "$runtime/graphical-status.tmp"
+}
+trap cleanup EXIT
+trap 'status stopped; exit 0' INT TERM HUP
+failures=0
+while :; do
+    status "starting attempt=$((failures + 1))"
+    # Drain all child output even after the 64 KiB prefix limit. This bounds RAM
+    # while preventing a full pipe from blocking Xorg, GTK or the browser.
+    # Separate sessions let teardown include head/cat and any descendants that
+    # retain the pipe. xinit itself creates further process groups, so session
+    # ownership is the cleanup boundary rather than only its original group.
+    setsid sh -c 'head -c 65536 > "$1"; exec cat >/dev/null' \
+        sh "$runtime/graphics/latest.log" < "$fifo" 9>&- &
+    reader=$!
+    started=$(date +%s)
+    setsid "$xinit" /usr/bin/remoteos-xsession -- /usr/bin/Xorg :0 vt1 \
+        -nolisten tcp -auth "${XAUTHORITY:-/run/remoteos/Xauthority}" \
+        -logfile /dev/null -verbose 3 > "$fifo" 2>&1 9>&- &
+    child=$!
+    result=0
+    wait "$child" || result=$?
+    stop_session "$child" 5
+    child=
+    # xinit may have exited while another writer still owns stdout. Give the
+    # reader a short grace interval, then terminate its whole owned session.
+    drain=5
+    while [ "$drain" -gt 0 ] && process_live "$reader"; do
+        sleep 0.05
+        drain=$((drain - 1))
+    done
+    stop_session "$reader" 5
+    reader=
+    elapsed=$(( $(date +%s) - started ))
+    # A stable session gets a fresh recovery budget after a later exit.
+    [ "$elapsed" -lt 60 ] || failures=0
+    failures=$((failures + 1))
+    status "exited code=$result consecutive_failures=$failures"
+    if [ ! -e "$runtime/ephemeral-state" ] && [ -d "$reports" ] && [ -w "$reports" ]; then
+        if temporary=$(mktemp "$reports/.graphical.XXXXXX"); then
+            { cat "$runtime/graphical-status.txt"; cat "$runtime/graphics/latest.log"; } > "$temporary"
+            chmod 600 "$temporary"
+            mv "$temporary" "$reports/latest-graphical-failure.txt"
+        fi
+    fi
+    if [ "$failures" -ge 3 ]; then
+        status "failed code=$result attempts=3"
+        {
+            printf '\nRemoteOS graphical setup could not start after three attempts.\nPower off with the physical power button, then use the recovery instructions.\nThe latest hardware and graphical failure reports are on the state partition.\n'
+            # An exact kernel command-line token enables the complete captured
+            # prefix on the local/serial console. Never source the command line.
+            if grep -Eq '(^|[[:space:]])remoteos\.diagnostic=1([[:space:]]|$)' "$cmdline" 2>/dev/null; then
+                printf '\n--- Captured graphical log (diagnostic mode; at most 64 KiB) ---\n'
+                head -c 65536 "$runtime/graphics/latest.log"
+                printf '\n--- End captured graphical log ---\n'
+            else
+                printf '\n--- Recent graphical error context (at most 8 KiB / 40 lines) ---\n'
+                tail -c 8192 "$runtime/graphics/latest.log" | tail -n 40
+                printf '\n--- End recent graphical error context ---\n'
+            fi
+        } > "$console" 2>/dev/null || true
+        exit 1
+    fi
+    sleep "$delay" 9>&- &
+    sleeper=$!
+    wait "$sleeper" || true
+    sleeper=
+done

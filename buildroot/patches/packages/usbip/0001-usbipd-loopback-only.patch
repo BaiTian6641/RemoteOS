@@ -1,0 +1,37 @@
+From: RemoteOS maintainers <remoteos@localhost>
+Subject: [PATCH] usbipd: restrict the raw export listener to IPv4 loopback
+
+RemoteOS exposes USB devices only over its authenticated reverse TLS
+relay. The raw USB/IP protocol has no authentication and must never
+listen on a network-facing interface. A fixed IPv4 loopback address
+keeps both the default and -4 paths local; -6 fails closed.
+
+Upstream: Not submitted [appliance transport policy]
+
+--- a/tools/usb/usbip/src/usbipd.c
++++ b/tools/usb/usbip/src/usbipd.c
+@@ -52,10 +52,10 @@
+ 	"usage: usbipd [options]\n"
+ 	"\n"
+ 	"	-4, --ipv4\n"
+-	"		Bind to IPv4. Default is both.\n"
++	"		Bind to IPv4 loopback (RemoteOS default).\n"
+ 	"\n"
+ 	"	-6, --ipv6\n"
+-	"		Bind to IPv6. Default is both.\n"
++	"		IPv6-only mode is unsupported by RemoteOS and fails closed.\n"
+ 	"\n"
+ 	"	-e, --device\n"
+ 	"		Run in device mode.\n"
+@@ -527,7 +527,10 @@
+ 	else
+ 		family = AF_INET6;
+ 
+-	ai_head = do_getaddrinfo(NULL, family);
++	/* Raw USB/IP is accepted only from the authenticated local TLS relay.
++	 * Explicit IPv6-only mode fails closed rather than opening a public socket.
++	 */
++	ai_head = do_getaddrinfo("127.0.0.1", family);
+ 	if (!ai_head) {
+ 		usbip_driver_close(driver);
+ 		return -1;

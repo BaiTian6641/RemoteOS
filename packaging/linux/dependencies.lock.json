@@ -1,0 +1,12 @@
+{
+  "evdi": {
+    "version": "1.14.11",
+    "tag": "v1.14.11",
+    "commit": "34da6e302a44e569e3fb7692fa1fb796b7146606",
+    "url": "https://github.com/DisplayLink/evdi/archive/refs/tags/v1.14.11.tar.gz",
+    "sha256": "323c98cc65e9df8a18d8242a0f40d9c80cf337a2fb806dd0e164bec4cdbf3fd1",
+    "source_directory": "evdi-1.14.11"
+  },
+  "host_kernel": "Build and qualify against an explicitly selected Ubuntu 24.04 x64 kernel release; none has been hardware-qualified in this workspace.",
+  "secure_boot": "A module-signing key trusted by the deployment host is an external provisioning input. Never disable Secure Boot or signature enforcement."
+}

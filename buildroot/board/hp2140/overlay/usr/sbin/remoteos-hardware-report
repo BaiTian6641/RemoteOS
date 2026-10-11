@@ -1,0 +1,96 @@
+#!/bin/sh
+# Local report only. Does not record Wi-Fi passwords, private keys or browser state.
+set -eu
+report=${1:-/run/remoteos/hardware.txt}
+umask 022
+mkdir -p "$(dirname "$report")"
+temporary=$(mktemp "$report.XXXXXX")
+trap 'rm -f "$temporary" "${persistent_temporary:-}"' EXIT HUP INT TERM
+{
+    echo 'RemoteOS hardware qualification inventory (results are not a pass)'
+    date -u
+    uname -a
+    cat /etc/remoteos-release
+    cat /proc/cpuinfo
+    cat /proc/meminfo
+    echo '=== PCI devices and kernel drivers ==='
+    lspci -nnk || true
+    echo '=== USB topology ==='
+    lsusb -t || true
+    lsusb || true
+    echo '=== Input device inventory (no event recording) ==='
+    cat /proc/bus/input/devices || true
+    for event in /sys/class/input/event*; do
+        [ -d "$event" ] || continue
+        echo "$event"
+        ls -l "/dev/input/${event##*/}" || true
+        udevadm info --query=property --path="$event" 2>/dev/null |
+            awk '/^(DEVNAME|ID_INPUT[^=]*|ID_BUS|ID_PATH|NAME|LIBINPUT[^=]*)=/' || true
+    done
+    echo '=== Kernel input messages ==='
+    dmesg | awk '/input:|psmouse|i8042|serio|synaptics|Synaptics|ALPS|touchpad|TouchPad/' || true
+    echo '=== Video4Linux capabilities ==='
+    for dev in /dev/video*; do
+        [ -e "$dev" ] || continue
+        v4l2-ctl --device "$dev" --all --list-formats-ext || true
+    done
+    echo '=== Wireless adapters ==='
+    iw dev || true
+    iw phy || true
+    echo '=== Radio block state ==='
+    for radio in /sys/class/rfkill/rfkill*; do
+        [ -d "$radio" ] || continue
+        printf '%s\n' "$radio"
+        for field in name type hard soft; do
+            printf '%s=' "$field"
+            cat "$radio/$field" || true
+        done
+    done
+    echo '=== Network and graphical startup ==='
+    cat /run/remoteos/network-status.txt /run/remoteos/graphical-status.txt 2>/dev/null || true
+    echo '=== Kernel wireless and firmware messages ==='
+    dmesg | awk '/firmware|b43|ssb|bcma|rfkill/' || true
+    echo '=== Kernel graphics messages ==='
+    dmesg | awk '/i915|drm|DRM|agpgart|intelfb|fbcon/' || true
+    echo '=== DRM connector modes ==='
+    for connector in /sys/class/drm/card*-*; do
+        [ -f "$connector/status" ] || continue
+        echo "$connector"
+        cat "$connector/status" "$connector/modes" || true
+    done
+    echo '=== X11 displays and XVideo ==='
+    echo '=== RemoteOS Intel presentation policy ==='
+    cat /etc/X11/xorg.conf.d/10-remoteos.conf || true
+    if [ -n "${DISPLAY:-}" ]; then
+        xrandr --verbose || true
+        xvinfo || true
+        echo '=== X11 cursor image (no input-event recording) ==='
+        remoteos-cursor-info || true
+        echo '=== X11 input devices (no event recording) ==='
+        xinput --list --long || true
+        echo '=== Xorg input initialization ==='
+        awk '/config\/udev:|Using input driver|[Tt]ouchpad|TouchPad|Synaptics|[Mm]ouse|[Pp]ointer|[Cc]ursor|evdev|libinput|[Ww]ait|[Vv]ideo|Swapbuffers|\(EE\)/' \
+            /run/remoteos/graphics/latest.log 2>/dev/null || true
+    else
+        echo 'Run again from the graphical session to collect xrandr and xvinfo.'
+    fi
+    echo '=== Media factories ==='
+    for element in avdec_mpeg2video rtpmpvdepay rtpvrawdepay rtpbin xvimagesink opusdec alsasink dtlssrtpdec; do
+        gst-inspect-1.0 "$element" || true
+    done
+} 2>&1 | head -c 524288 > "$temporary"
+# Concurrent startup/graphical captures publish whole snapshots, never partial
+# or interleaved text. Retain only one bounded report, without credential state.
+chmod 644 "$temporary"
+if [ ! -e /run/remoteos/ephemeral-state ] && [ -d /state/reports ] && [ -w /state/reports ]; then
+    if persistent_temporary=$(mktemp /state/reports/.boot-hardware.XXXXXX) &&
+       cp "$temporary" "$persistent_temporary" &&
+       chmod 600 "$persistent_temporary" &&
+       mv -f "$persistent_temporary" /state/reports/latest-boot-hardware.txt; then
+        :
+    else
+        echo 'Could not persist hardware report; RAM snapshot remains available' >&2
+    fi
+fi
+mv -f "$temporary" "$report"
+printf '%s\n' "$report"

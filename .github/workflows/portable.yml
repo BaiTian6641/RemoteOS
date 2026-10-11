@@ -1,0 +1,173 @@
+name: Portable applications
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: portable-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verified SDK and MSVC environment
+        shell: pwsh
+        run: |
+          python scripts/fetch-native-sdk.py windows "$env:RUNNER_TEMP/sdk-downloads"
+          $Root = "$env:RUNNER_TEMP/gstreamer"
+          $Installer = "$env:RUNNER_TEMP/sdk-downloads/gstreamer-1.0-msvc-x86_64-1.28.7.exe"
+          $Process = Start-Process $Installer -ArgumentList @('/VERYSILENT','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$Root") -Wait -PassThru
+          if ($Process.ExitCode -ne 0) { throw "SDK install failed: $($Process.ExitCode)" }
+          $VsWhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $VS = & $VsWhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $Cmd = "`"$VS/Common7/Tools/VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
+          cmd /s /c $Cmd | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+          "REMOTEOS_GSTREAMER_ROOT=$Root" >> $env:GITHUB_ENV
+      - name: Native build and portable runtime
+        shell: pwsh
+        run: |
+          $Version = (Get-Content VERSION -Raw).Trim()
+          $Package = "$PWD/output/RemoteOS-Host-$Version-windows-x86_64"
+          ./packaging/windows/Build-DesktopHost.ps1 -GStreamerRoot $env:REMOTEOS_GSTREAMER_ROOT -OutputDirectory $Package
+          Move-Item $env:REMOTEOS_GSTREAMER_ROOT "$env:REMOTEOS_GSTREAMER_ROOT-disabled"
+          ./packaging/windows/verify-portable.ps1 -Package $Package
+          Compress-Archive -Path $Package -DestinationPath "$Package.zip" -CompressionLevel Optimal
+          $Hash = (Get-FileHash "$Package.zip" -Algorithm SHA256).Hash.ToLower()
+          "$Hash  $(Split-Path $Package -Leaf).zip" | Set-Content -Encoding ascii "$Package.zip.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-portable
+          path: |
+            output/*.zip
+            output/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verified universal SDK
+        run: |
+          python3 scripts/fetch-native-sdk.py macos "$RUNNER_TEMP/sdk-downloads"
+          sudo installer -pkg "$RUNNER_TEMP/sdk-downloads/gstreamer-1.0-1.28.7-universal.pkg" -target /
+          sudo installer -pkg "$RUNNER_TEMP/sdk-downloads/gstreamer-1.0-devel-1.28.7-universal.pkg" -target /
+          command -v ninja >/dev/null || brew install ninja
+          command -v pkg-config >/dev/null || brew install pkgconf
+      - name: Universal app and SDK-free verification
+        run: |
+          bash packaging/macos/build-host.sh
+          app="output/RemoteOS-Host-$(cat VERSION).app"
+          sudo mv /Library/Frameworks/GStreamer.framework "$RUNNER_TEMP/GStreamer-disabled.framework"
+          unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GST_REGISTRY_1_0
+          python3 packaging/macos/bundle-runtime.py "$app" --verify
+          "$app/Contents/MacOS/remoteos-runtime-check"
+          "$app/Contents/MacOS/remoteos-host" --help
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$app.zip"
+          shasum -a 256 "$app.zip" > "$app.zip.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-portable
+          path: |
+            output/*.zip
+            output/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  macos-intel-check:
+    needs: macos
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: macos-portable
+          path: output
+      - name: Intel runtime without SDK installation
+        run: |
+          app="output/RemoteOS-Host-$(cat VERSION).app"
+          ditto -x -k "$app.zip" output
+          python3 packaging/macos/bundle-runtime.py "$app" --verify
+          "$app/Contents/MacOS/remoteos-runtime-check"
+          "$app/Contents/MacOS/remoteos-host" --help
+          codesign --verify --deep --strict "$app"
+
+  linux-client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libssl-dev libgtk-3-dev libxtst-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav patchelf squashfs-tools xvfb xauth x11-utils openbox
+      - name: Build and isolated UI tests
+        run: |
+          cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DREMOTEOS_WITH_GTK=ON -DREMOTEOS_WITH_MEDIA=ON -DREMOTEOS_WITH_BROWSER=OFF -DREMOTEOS_WITH_DESKTOP_HOST=ON -DREMOTEOS_WITH_WAYLAND_HOST=OFF -DREMOTEOS_WITH_SERVICE_HOST=OFF -DREMOTEOS_BUILD_TESTS=ON
+          cmake --build build-ci -j4
+          ctest --test-dir build-ci -R '^(core|input-queue-order|client-session-ui|desktop-host-integration|tls-cpu-preference|client-power-policy)$' --output-on-failure
+      - name: Portable AppImage
+        run: |
+          python3 packaging/appimage/stage.py --root / --repo "$PWD" --build "$PWD/build-ci" --output "$PWD/output/RemoteOS-Client.AppDir"
+          curl --fail --location --retry 3 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 -o "$RUNNER_TEMP/runtime-x86_64"
+          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  $RUNNER_TEMP/runtime-x86_64" | sha256sum -c -
+          mksquashfs output/RemoteOS-Client.AppDir "$RUNNER_TEMP/client.squashfs" -noappend -comp gzip -all-root
+          image="output/RemoteOS-Client-$(cat VERSION)-x86_64.AppImage"
+          cat "$RUNNER_TEMP/runtime-x86_64" "$RUNNER_TEMP/client.squashfs" > "$image"
+          chmod +x "$image"
+          "$image" --appimage-extract >/dev/null
+          test -x squashfs-root/usr/bin/remoteos-client
+          sha256sum "$image" > "$image.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-client-portable
+          path: |
+            output/*.AppImage
+            output/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, macos-intel-check, linux-client]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Create reviewable release with executable packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REMOTEOS_TAG: ${{ github.ref_name }}
+          REMOTEOS_REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release create "$REMOTEOS_TAG" packages/* --repo "$REMOTEOS_REPOSITORY" --verify-tag --draft --title "RemoteOS $REMOTEOS_TAG" --notes 'Portable application packages. See docs/portable-builds.md for relative mouse controls, platform permissions and qualification limits.'

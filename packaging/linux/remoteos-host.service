@@ -1,0 +1,30 @@
+[Unit]
+Description=RemoteOS authenticated remote host
+After=network.target systemd-modules-load.service
+Before=display-manager.service
+ConditionPathExists=/etc/remoteos/host.json
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/remoteos-host --config /etc/remoteos/host.json
+Restart=on-failure
+RestartSec=3
+User=root
+Group=root
+UMask=0077
+RuntimeDirectory=remoteos vhci_hcd
+RuntimeDirectoryMode=0750
+StateDirectory=remoteos
+StateDirectoryMode=0700
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/run/lightdm/root/:0
+ProtectSystem=strict
+ReadWritePaths=/var/lib/remoteos /run/remoteos /run/vhci_hcd
+ProtectHome=true
+PrivateTmp=false
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

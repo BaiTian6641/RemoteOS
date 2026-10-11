@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+start)
+    mkdir -p /run/tailscale
+    start-stop-daemon -S -b -m -p /run/tailscaled.pid -x /usr/sbin/tailscaled -- \
+        --state=/state/tailscale/tailscaled.state --statedir=/state/tailscale --socket=/run/tailscale/tailscaled.sock \
+        --tun=tailscale0 --port=41641
+    retry=0
+    until [ -S /run/tailscale/tailscaled.sock ]; do
+        retry=$((retry + 1))
+        [ "$retry" -lt 50 ] || { echo "Tailscale socket unavailable" >&2; exit 1; }
+        sleep 0.1
+    done
+    # Local user authorization is independent of tailnet enrollment.
+    retry=0
+    until tailscale --socket=/run/tailscale/tailscaled.sock set --operator=remoteos; do
+        retry=$((retry + 1))
+        [ "$retry" -lt 50 ] || { echo 'Tailscale operator setup failed' >&2; exit 1; }
+        sleep 0.2
+    done
+    ;;
+stop) start-stop-daemon -K -p /run/tailscaled.pid ;;
+*) exit 2 ;;
+esac

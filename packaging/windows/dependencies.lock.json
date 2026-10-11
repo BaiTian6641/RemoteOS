@@ -1,0 +1,14 @@
+{
+  "virtual_display_driver": {
+    "version": "25.7.23",
+    "url": "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip",
+    "sha256": "e24210692b442b39af763536330ce78b423f19342b7a7792c26de3944e418b3a",
+    "note": "Upstream x86-named archive contains the x64 family driver; verify PE architecture and catalog signatures on Windows before provisioning."
+  },
+  "usbip_win2": {
+    "version": "0.9.8.1",
+    "url": "https://github.com/vadimgrn/usbip-win2/releases/download/v.0.9.8.1/USBip-0.9.8.1-x64.exe",
+    "sha256": "38cad6d4432b52d5bb9409d9ad03b72fdffc4ada4cd3a48fbeca1a2752a8518a"
+  },
+  "qualification": "Source release metadata pinned; no Windows driver install or signature qualification has been performed by this repository."
+}

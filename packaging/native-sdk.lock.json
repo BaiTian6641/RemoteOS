@@ -1,0 +1,10 @@
+{
+  "gstreamer_version": "1.28.7",
+  "windows": [
+    {"file": "gstreamer-1.0-msvc-x86_64-1.28.7.exe", "url": "https://gstreamer.freedesktop.org/data/pkg/windows/1.28.7/msvc/gstreamer-1.0-msvc-x86_64-1.28.7.exe", "sha256": "032fc6062b8539838fc8da22589cb9b24c5d820baa7f8cc160af9ea08395badf"}
+  ],
+  "macos": [
+    {"file": "gstreamer-1.0-1.28.7-universal.pkg", "url": "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.7/gstreamer-1.0-1.28.7-universal.pkg", "sha256": "529fdf4a4027d942e59b5b3564f6400adaa008f63ce5f3fed4ffe35d73911994"},
+    {"file": "gstreamer-1.0-devel-1.28.7-universal.pkg", "url": "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.7/gstreamer-1.0-devel-1.28.7-universal.pkg", "sha256": "72a44870cf02472cbf6e9a84bcc25ee6807dd1c26659a112066373544d365e7a"}
+  ]
+}

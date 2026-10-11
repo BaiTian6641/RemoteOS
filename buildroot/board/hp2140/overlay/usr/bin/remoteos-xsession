@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+export DISPLAY=:0 XAUTHORITY=/run/remoteos/Xauthority
+# The supervisor uses umask077. Its root-owned parent must remain traversable
+# after dropping to UID600, while the per-user runtime directory stays private.
+mkdir -p /run/user
+chown 0:0 /run/user
+chmod 755 /run/user
+mkdir -p /run/user/600
+chown 600:600 /run/user/600
+chmod 700 /run/user/600
+export XDG_RUNTIME_DIR=/run/user/600
+export XCURSOR_THEME=Adwaita XCURSOR_SIZE=24
+printf '%s\n' 'x-session-started' > /run/remoteos/graphical-status.tmp
+chmod 644 /run/remoteos/graphical-status.tmp
+mv /run/remoteos/graphical-status.tmp /run/remoteos/graphical-status.txt
+xset s off || logger -t remoteos 'X screensaver control unavailable'
+xset -dpms || logger -t remoteos 'X DPMS extension unavailable'
+remoteos-cursor-info --initialize || logger -t remoteos 'Default cursor initialization failed'
+/usr/sbin/remoteos-hardware-report /run/remoteos/hardware.txt >/dev/null 2>&1 &
+# The root Xorg launcher drops privileges before executing all application UI.
+exec su -p -s /bin/sh remoteos -c 'exec /usr/bin/remoteos-user-session'

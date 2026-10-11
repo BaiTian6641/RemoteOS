@@ -1,0 +1,11 @@
+This package includes the app-local x64 Microsoft Visual C++ runtime DLLs
+from the Visual Studio redistributable directory. They are Microsoft software
+redistributed with this application under the Visual Studio license terms.
+They are not RemoteOS source and are not covered by third-party open source
+licenses. The Microsoft Universal CRT and Windows system libraries are
+provided by Windows 11 itself.
+
+Redistribution guidance:
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+Latest supported runtime information:
+https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist

@@ -1,0 +1,90 @@
+#!/bin/sh
+# Bounded, read-only snapshot. Runs on recording boundaries, never per frame.
+# REMOTEOS_DIAGNOSTIC_ROOT allows fixture tests without touching host interfaces.
+set -eu
+output=${1:-/run/remoteos/performance.txt}
+root=${REMOTEOS_DIAGNOSTIC_ROOT:-}
+umask 077
+temporary=$(mktemp "$output.XXXXXX")
+trap 'rm -f "$temporary"' EXIT HUP INT TERM
+{
+    printf 'RemoteOS performance snapshot (system counters, not inferred capacity)\n'
+    date -u
+    cat "$root/proc/uptime" 2>/dev/null || true
+    printf '\n=== CPU topology ===\n'
+    awk '
+        function finish() {
+            if (have_processor) {
+                logical++
+                if (physical != "" && core != "") cores[physical ":" core] = 1
+                else unknown = 1
+            }
+            have_processor = 0; physical = ""; core = ""
+        }
+        /^processor[ \t]*:/ { have_processor = 1 }
+        /^physical id[ \t]*:/ { physical = $NF }
+        /^core id[ \t]*:/ { core = $NF }
+        /^model name[ \t]*:/ && !model_seen++ { print }
+        /^$/ { finish() }
+        END {
+            finish()
+            for (key in cores) count++
+            printf "logical_cpus=%d\nphysical_cores=%s\n", logical, (unknown || !count ? "unknown" : count)
+            print "CPU utilization is logical-CPU occupancy; SMT processors share physical execution resources."
+        }
+    ' "$root/proc/cpuinfo" 2>/dev/null || true
+    printf '\n=== CPU frequency policies (kHz) ===\n'
+    for policy in "$root/sys/devices/system/cpu/cpufreq/"policy*; do
+        [ -d "$policy" ] || continue
+        printf '%s\n' "${policy##*/}"
+        for field in affected_cpus scaling_driver scaling_governor scaling_cur_freq scaling_min_freq scaling_max_freq; do
+            [ -r "$policy/$field" ] || continue
+            printf '%s=' "$field"
+            head -c 256 "$policy/$field"
+            printf '\n'
+        done
+    done
+    printf '\n=== Physical network devices ===\n'
+    for device in "$root/sys/class/net/"*; do
+        [ -e "$device/device" ] || continue
+        interface=${device##*/}
+        case "$interface" in ''|*[!a-zA-Z0-9_.-]*) continue ;; esac
+        printf 'interface=%s\n' "$interface"
+        if [ -L "$device/device/driver" ]; then
+            driver=$(readlink "$device/device/driver")
+            printf 'driver=%s\n' "${driver##*/}"
+        fi
+        for field in rx_bytes rx_packets rx_errors rx_dropped tx_bytes tx_packets tx_errors tx_dropped; do
+            [ -r "$device/statistics/$field" ] || continue
+            printf '%s=' "$field"
+            head -c 32 "$device/statistics/$field"
+            printf '\n'
+        done
+        if [ -d "$device/wireless" ]; then
+            # Exclude station MAC, SSID, addresses and profile contents.
+            # Each command is time-bounded; no scans or network mutations.
+            printf 'wireless_link (PHY bitrate is not application goodput):\n'
+            timeout -k 1 2 iw dev "$interface" link 2>/dev/null |
+                awk '/^[ \t]*(freq:|signal:|tx bitrate:|rx bitrate:|Not connected)/' || true
+            printf 'wireless_station (cumulative driver counters):\n'
+            timeout -k 1 2 iw dev "$interface" station dump 2>/dev/null |
+                awk '/^[ \t]*(inactive time:|rx bytes:|rx packets:|tx bytes:|tx packets:|tx retries:|tx failed:|signal:|signal avg:|tx bitrate:|rx bitrate:|expected throughput:|rx duration:|tx duration:)/' || true
+            printf 'wireless_power_save:\n'
+            timeout -k 1 2 iw dev "$interface" get power_save 2>/dev/null |
+                awk '/^[ \t]*Power save:/' || true
+        fi
+    done
+    printf '\n=== Kernel UDP counters (cumulative for whole client) ===\n'
+    awk '/^Udp:/ {print}' "$root/proc/net/snmp" 2>/dev/null || true
+    printf '\n=== Kernel softnet counters (hex; fields 2/3 are dropped/time_squeeze) ===\n'
+    head -c 8192 "$root/proc/net/softnet_stat" 2>/dev/null || true
+    printf '\n=== UDP receive buffer limits (bytes) ===\n'
+    for field in rmem_default rmem_max; do
+        [ -r "$root/proc/sys/net/core/$field" ] || continue
+        printf '%s=' "$field"
+        head -c 32 "$root/proc/sys/net/core/$field"
+        printf '\n'
+    done
+} 2>&1 | head -c 65536 > "$temporary"
+mv -f "$temporary" "$output"
+printf '%s\n' "$output"

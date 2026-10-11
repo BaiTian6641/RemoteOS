@@ -1,0 +1,68 @@
+#!/bin/sh
+# Record hardware counters and fresh application metrics without credentials.
+set -eu
+count=${1:-1800}
+output=${2:-/state/home/qualification.csv}
+metrics=${REMOTEOS_METRICS_FILE:-/run/user/600/remoteos-metrics.csv}
+metrics_filter=${REMOTEOS_METRICS_FILTER:-/usr/share/remoteos/sample-metrics.awk}
+network_filter=${REMOTEOS_NETWORK_FILTER:-/usr/share/remoteos/sample-network.awk}
+cpu_filter=${REMOTEOS_CPU_FILTER:-/usr/share/remoteos/sample-cpu.awk}
+kernel_filter=${REMOTEOS_KERNEL_FILTER:-/usr/share/remoteos/sample-kernel.awk}
+root=${REMOTEOS_DIAGNOSTIC_ROOT:-}
+case "$count" in *[!0-9]*|'') echo 'Sample count must be an integer' >&2; exit 2 ;; esac
+[ "$count" -ge 1 ] && [ "$count" -le 86400 ] || exit 2
+umask 077
+printf 'uptime_seconds,cpu_busy_percent,mem_available_kib,physical_rx_bytes,physical_tx_bytes,max_temperature_millicelsius,metrics_fresh,client_uptime_seconds,connected,internal_codec,internal_width,internal_height,internal_target_fps,internal_fps,vga_codec,vga_width,vga_height,vga_target_fps,vga_fps,control_rtt_ms,rtp_loss_fraction,queue_ms,usb_exported,busiest_logical_cpu_percent,logical_cpu_count,udp_received_datagrams,udp_receive_errors,udp_receive_buffer_errors,udp_send_buffer_errors,physical_rx_dropped,physical_rx_errors,softnet_dropped,softnet_time_squeezed,cpu_min_current_khz,cpu_max_current_khz,media_details_fresh,internal_bitrate_bps,internal_decoded_fps,internal_decode_ms,internal_receiver_timeline_delay_ms,internal_presentation_drop_fraction,internal_recovery_drop_fraction,internal_receive_mbps,internal_compressed_queue_drops,vga_bitrate_bps,vga_decoded_fps,vga_decode_ms,vga_receiver_timeline_delay_ms,vga_presentation_drop_fraction,vga_recovery_drop_fraction,vga_receive_mbps,vga_compressed_queue_drops\n' > "$output"
+# Expensive station inspection occurs only at recording boundaries. Reports
+# share the CSV's private permissions and never contain Wi-Fi credentials.
+remoteos-performance-report "$output.start.txt" >/dev/null 2>&1 || true
+trap 'remoteos-performance-report "$output.end.txt" >/dev/null 2>&1 || true' EXIT
+cpu_previous=
+index=0
+while [ "$index" -lt "$count" ]; do
+    stats=$(awk -v previous="$cpu_previous" -f "$cpu_filter" "$root/proc/stat")
+    set -- $stats
+    valid=$1 busy=$2 busiest=$3 logical=$4
+    shift 4
+    cpu_previous="$*"
+    if [ "$valid" -eq 1 ]; then
+        uptime=$(cut -d' ' -f1 "$root/proc/uptime")
+        mem=$(awk '/MemAvailable:/ {print $2}' "$root/proc/meminfo")
+        physical=$(for iface_path in "$root/sys/class/net/"*; do
+            [ -e "$iface_path/device" ] || continue
+            printf '%s ' "${iface_path##*/}"
+        done)
+        # Count bytes once at physical NICs; tailscale0 contains encapsulated
+        # traffic that would duplicate the same transfer if added here.
+        net=$(awk -v physical="$physical" -f "$network_filter" "$root/proc/net/dev")
+        # Only /proc and sysfs reads per second. Kernel counters are cumulative;
+        # compare adjacent rows to distinguish socket/radio loss from frame drops.
+        set --
+        for file in "$root/proc/net/snmp" "$root/proc/net/softnet_stat" "$root/sys/devices/system/cpu/cpufreq/"policy*/scaling_cur_freq; do
+            [ ! -r "$file" ] || set -- "$@" "$file"
+        done
+        for interface in $physical; do
+            for field in rx_dropped rx_errors; do
+                file="$root/sys/class/net/$interface/statistics/$field"
+                [ ! -r "$file" ] || set -- "$@" "$file"
+            done
+        done
+        kernel=$(awk -f "$kernel_filter" "$@" /dev/null)
+        temp=0
+        for sensor in "$root/sys/class/thermal/"thermal_zone*/temp; do
+            [ -r "$sensor" ] || continue
+            value=$(cat "$sensor")
+            [ "$value" -le "$temp" ] || temp=$value
+        done
+        # Limit reads and validate the atomically replaced, unprivileged UI file.
+        # A missing/stale record stays visibly missing; it is never repeated.
+        media_data=$(head -c 4097 "$metrics" 2>/dev/null || true)
+        metrics_now=$(cut -d' ' -f1 "$root/proc/uptime")
+        media=$(printf '%s\n' "$media_data" | awk -v now="$metrics_now" -f "$metrics_filter")
+        stages=$(printf '%s\n' "$media_data" | awk -v now="$metrics_now" -v section=stages -f "$metrics_filter")
+        printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' "$uptime" "$busy" "$mem" "$net" "$temp" "$media" "$busiest" "$logical" "$kernel" "$stages" >> "$output"
+        index=$((index + 1))
+    fi
+    sleep 1
+done
+printf '%s\n' "$output"

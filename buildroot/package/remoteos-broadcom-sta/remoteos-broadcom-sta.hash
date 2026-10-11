@@ -1,0 +1,8 @@
+# From Debian broadcom-sta_6.30.223.271-32.dsc (Checksums-Sha256).
+sha256  8b539f173ab7092d34307b6306e22c6380df025a7f2483937374492a7aedb2dc  broadcom-sta_6.30.223.271.orig.tar.xz
+sha256  9bb7bffcccc66cc674153a216c5970d96dca6ac1219e820e7d9abdafd5b855b0  broadcom-sta_6.30.223.271-32.debian.tar.xz
+# Locally calculated after the complete pinned Debian patch series.
+sha256  90921ee832506148eb486e159406c5e4e899be93d8527fe1e72bedc3397f7c35  amd64/lib/LICENSE.txt
+sha256  f50bf08837501cca8ef60fc61fe2f8e7ce187d5cb0bd56e2da534bad7aae46ce  amd64/Makefile
+sha256  2ede403cd56d42156c6543375e6ba72b24b5479a0162904ec892588f0849ef70  amd64/src/include/lib80211.h
+sha256  4e3befde563d6ec2f5882e93925b3f884a3bf5c5a39b6a7930c610ea00cf5deb  debian/copyright

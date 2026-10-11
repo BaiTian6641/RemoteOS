@@ -1,0 +1,31 @@
+From: RemoteOS maintainers
+Subject: [PATCH] ANGLE: use explicit rounding when floating evaluation is wider
+
+The bias-addition optimization assumes float/double operations round to
+their semantic types. GCC 13+ standard C++ modes evaluate i386 x87
+expressions with excess precision, so both its static assertions and the
+algorithm's premise fail. Use the existing std::round path when
+FLT_EVAL_METHOD indicates wider evaluation. Preserve exact-width targets.
+
+Reference: https://gcc.gnu.org/gcc-13/porting_to.html
+Upstream: Not submitted (appliance compatibility patch)
+--- a/Source/ThirdParty/ANGLE/src/common/mathutil.h
++++ b/Source/ThirdParty/ANGLE/src/common/mathutil.h
+@@ -15,6 +15,7 @@
+ #include <string.h>
+ #include <algorithm>
+ #include <array>
++#include <cfloat>
+ #include <limits>
+ #include <ostream>
+ #include "common/unsafe_buffers.h"
+@@ -611,7 +612,8 @@ inline R roundToNearest(T input)
+ {
+     static_assert(std::is_floating_point<T>::value);
+     static_assert(std::numeric_limits<R>::is_integer);
+-#if defined(__aarch64__) || defined(_M_ARM64)
++#if defined(__aarch64__) || defined(_M_ARM64) || FLT_EVAL_METHOD != 0
++    // Extended-precision arithmetic (such as i386 x87) must round explicitly.
+     // On armv8, this expression is compiled to a dedicated round-to-nearest instruction
+     return static_cast<R>(std::round(input));
+ #else

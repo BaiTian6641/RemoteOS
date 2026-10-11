@@ -1,0 +1,8 @@
+{
+  "version": "0.60.1",
+  "url": "https://github.com/yhirose/cpp-httplib/releases/tag/v0.60.1",
+  "files": {
+    "httplib.h": "e932d7771bdb93150868987e30112d9a31e24bef592d6d7a07e973d5845cf8d6",
+    "LICENSE": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b"
+  }
+}

@@ -1,0 +1,15 @@
+/.cache/
+/.deps/
+/build/
+/build-*/
+/output/
+/artifacts/
+*.pem
+*.key
+__pycache__/
+/.agents/
+/.aws/
+/.codex/
+/.DS_Store
+/docs/latest-boot-hardware.txt
+/docs/latest-graphical-failure.txt

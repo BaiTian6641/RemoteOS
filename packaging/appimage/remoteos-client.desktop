@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RemoteOS Client
+Comment=Connect to your RemoteOS host
+Exec=remoteos-client
+Icon=remoteos-client
+Categories=Network;RemoteAccess;
+Terminal=false

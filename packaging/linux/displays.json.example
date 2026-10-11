@@ -1,0 +1,7 @@
+{
+  "outputs": {
+    "0": "REPLACE_WITH_FIRST_EVDI_XRANDR_OUTPUT",
+    "1": "REPLACE_WITH_SECOND_EVDI_XRANDR_OUTPUT"
+  },
+  "providers": []
+}
