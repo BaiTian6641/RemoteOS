@@ -141,7 +141,9 @@ def run_case(width, height, managed=False):
             frame = root / '94' / 'Xvfb_screen0'
 
             def cursor_pixels():
-                xt.XTestFakeMotionEvent(client_display, -1, 500, 380, 0); x.XSync(client_display, False); time.sleep(.05)
+                xt.XTestFakeMotionEvent(client_display, -1, 500, 380, 0); x.XSync(client_display, False); time.sleep(.18)
+                # Let the host cursor change reach the live video before
+                # comparing the local cursor's two framebuffer snapshots.
                 before = pixels(frame)
                 xf.XFixesHideCursor(client_display, client_root); x.XSync(client_display, False)
                 after = pixels(frame)
@@ -203,7 +205,7 @@ def run_case(width, height, managed=False):
             assert not (mask.value & 256), 'Overlay left the host mouse button held'
             xt.XTestFakeButtonEvent(client_display,1,False,0); x.XSync(client_display,False)
             command('power'); wait_state(lambda value: not value['overlay'] and value['video_geometry'] == viewport)
-            assert cursor_pixels() == 0, 'Resume did not hide the local cursor'
+            assert cursor_pixels() == 0, ('Resume did not hide the local cursor', command('state'))
             assert not command('state')['setup_window_mapped'], 'Resume remapped setup controls'
             command('reset_setup')
             command('disconnect'); wait_state(lambda value: not value['connected'])
@@ -217,7 +219,7 @@ def run_case(width, height, managed=False):
             assert not again['setup_window_mapped'] and again['viewer_mapped'], 'Reconnect did not isolate the viewer'
             command('disconnect'); wait_state(lambda value: not value['connected'] and value['setup_window_mapped'] and not value['viewer_mapped'])
             command('quit'); app.wait(timeout=5)
-            receipt = {'status':'passed','discovered_and_saved_hosts':1,'pin_digits':6,'cursor_visible_before':visible_before,'cursor_visible_in_overlay':overlay_pixels,'cursor_visible_after_disconnect':disconnected_pixels,'remote_cursor_pixels':0,'pointer':'one-to-one native positions including last pixel','held_keys_and_buttons_released':True,'host_resolution':f'{width}x{height} exact native matching','fullscreen_viewport':viewport,'oversized_setup_requisition':[width+160,height+100],'window_manager':'Openbox' if managed else 'none','physical_input_opened':False,'setup_toplevel_unmapped':True,'viewer_borderless':True,'overlay_parent_is_viewer':True,'reconnect_fullscreen':True}
+            receipt = {'status':'passed','discovered_and_saved_hosts':1,'pin_digits':6,'cursor_visible_before':visible_before,'cursor_visible_in_overlay':overlay_pixels,'cursor_visible_after_disconnect':disconnected_pixels,'remote_cursor_pixels':0,'pointer':'one-to-one native positions including last pixel','held_keys_and_buttons_released':True,'host_resolution':f'{width}x{height} exact native matching','fullscreen_viewport':viewport,'oversized_setup_requisition':[width+160,height+100],'window_manager':'Openbox' if managed else 'none','physical_input_opened':False,'setup_toplevel_unmapped':True,'viewer_borderless':True,'overlay_parent_is_viewer':True,'reconnect_fullscreen':True,'relative_edge_motion_and_host_warp':True,'relative_middle_drag_release':True,'relative_capture_released_in_overlay':True}
         except Exception:
             if 'server' in locals() and server.stdout:
                 os.set_blocking(server.stdout.fileno(), False)

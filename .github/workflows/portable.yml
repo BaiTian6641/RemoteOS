@@ -33,7 +33,10 @@ jobs:
           $VS = & $VsWhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           $Cmd = "`"$VS/Common7/Tools/VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
           cmd /s /c $Cmd | ForEach-Object {
-            if ($_ -match '^([^=]+)=(.*)$' -and $Matches[1] -match '^(PATH|INCLUDE|LIB|LIBPATH|VS.*|VC.*|Windows.*|UniversalCRT.*|UCRT.*|ExtensionSdkDir)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+            if ($_ -match '^([^=]+)=(.*)$') {
+              $Name = $Matches[1]; $Value = $Matches[2]
+              if ($Name -match '^(PATH|INCLUDE|LIB|LIBPATH|VS.*|VC.*|Windows.*|UniversalCRT.*|UCRT.*|ExtensionSdkDir)$') { "$Name=$Value" >> $env:GITHUB_ENV }
+            }
           }
           "REMOTEOS_GSTREAMER_ROOT=$Root" >> $env:GITHUB_ENV
       - name: Native build and portable runtime
@@ -43,7 +46,7 @@ jobs:
           $Package = "$PWD/output/RemoteOS-Host-$Version-windows-x86_64"
           try { ./packaging/windows/Build-DesktopHost.ps1 -GStreamerRoot $env:REMOTEOS_GSTREAMER_ROOT -OutputDirectory $Package }
           catch { Write-Output ("::error::" + $_.Exception.Message.Replace('%','%25')); throw }
-          Move-Item $env:REMOTEOS_GSTREAMER_ROOT "$env:REMOTEOS_GSTREAMER_ROOT-disabled"
+          Move-Item $env:REMOTEOS_GSTREAMER_ROOT "${env:REMOTEOS_GSTREAMER_ROOT}-disabled"
           ./packaging/windows/verify-portable.ps1 -Package $Package
           Compress-Archive -Path $Package -DestinationPath "$Package.zip" -CompressionLevel Optimal
           $Hash = (Get-FileHash "$Package.zip" -Algorithm SHA256).Hash.ToLower()
