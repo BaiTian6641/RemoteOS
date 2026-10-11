@@ -1008,7 +1008,10 @@ private:
     auto *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_style_context_add_class(gtk_widget_get_style_context(box),
                                 "remoteos-overlay");
-    gtk_container_add(GTK_CONTAINER(overlay_), box);
+    auto* controls_scroll = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(controls_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_container_add(GTK_CONTAINER(controls_scroll), box);
+    gtk_container_add(GTK_CONTAINER(overlay_), controls_scroll);
     gtk_box_pack_start(GTK_BOX(box), label("Client controls", "remoteos-title"),
                        FALSE, FALSE, 0);
     battery_notice_ = label("", "remoteos-warning");
@@ -2684,6 +2687,11 @@ private:
     }
   }
   gboolean pointer_event(GdkEvent *event) {
+    if (event->type == GDK_GRAB_BROKEN && relative_mouse_.active()) {
+      relative_mouse_.stop(); release_all();
+      if (connected_ && !overlay_open_) toggle_overlay();
+      return TRUE;
+    }
     bool input_allowed = desktop_input_ || (broker_ && broker_->forwarding());
 #ifdef REMOTEOS_CLIENT_UI_TEST
     input_allowed = true; // GDK events only; never open or grab physical evdev devices.

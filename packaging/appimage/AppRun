@@ -6,7 +6,7 @@ export REMOTEOS_ASSET_DIR="$appdir/usr/share/remoteos"
 export GST_PLUGIN_SYSTEM_PATH_1_0=
 export GST_PLUGIN_PATH_1_0="$appdir/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_SCANNER_1_0="$appdir/usr/libexec/gst-plugin-scanner"
-export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/remoteos-client/gst-0.1.18.bin"
+export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/remoteos-client/gst-0.1.19.bin"
 mkdir -p -- "$(dirname -- "$GST_REGISTRY")"
 export GDK_BACKEND=x11
 export GSETTINGS_SCHEMA_DIR="$appdir/usr/share/glib-2.0/schemas"

@@ -16,6 +16,9 @@ for entry in lock[a.platform]:
         with urllib.request.urlopen(entry['url'],timeout=120) as stream,temporary.open('wb') as out:
             while chunk:=stream.read(1024*1024):out.write(chunk)
         temporary.rename(path)
-    with path.open('rb') as stream:actual=hashlib.file_digest(stream,'sha256').hexdigest()
+    digest=hashlib.sha256()
+    with path.open('rb') as stream:
+        while chunk:=stream.read(1024*1024):digest.update(chunk)
+    actual=digest.hexdigest()
     if actual!=entry['sha256']:raise SystemExit('SDK hash mismatch: '+path.name)
     print(path.name,actual)

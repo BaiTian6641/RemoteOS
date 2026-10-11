@@ -48,7 +48,7 @@ for folder in (root/'usr/share/doc').iterdir():
   dest=out/'licenses/ubuntu24'/folder.name/'copyright';dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,dest)
 shutil.copytree(root/'usr/share/common-licenses',out/'licenses/common-licenses')
 shutil.copytree(a.repo/'third_party/cpp-httplib',out/'licenses/cpp-httplib',ignore=shutil.ignore_patterns('httplib.h'))
-for src in (a.repo/'output/hp2140/target/usr/share/licenses/ibm-plex/LICENSE.txt',a.repo/'.cache/improvements-0.1.18/runtime-lock.json'):
+for src in (a.repo/'output/hp2140/target/usr/share/licenses/ibm-plex/LICENSE.txt',a.repo/'packaging/appimage/runtime-lock.json'):
  if src.exists():shutil.copy2(src,out/'licenses'/src.name)
 shutil.copy2(root/'var/lib/dpkg/status',out/'licenses/ubuntu-package-status.txt')
 # Dependencies are supplied through a relocatable AppRun library path.
@@ -58,5 +58,5 @@ for rel in origins:
  versions+=re.findall(r'GLIBC_(\d+\.\d+)',text)
 maxv=max(versions,key=lambda v:tuple(map(int,v.split('.'))))
 if tuple(map(int,maxv.split('.')))>(2,39):raise RuntimeError('Unexpected newer glibc ABI '+maxv)
-manifest={'version':'0.1.18','baseline':'Ubuntu 24.04 x86_64','max_glibc':maxv,'input':'focused GTK; Ctrl+Alt+Home opens overlay','presentation':'X11 or XWayland, ximagesink; PulseAudio/PipeWire Pulse','files':[{'path':str(f.relative_to(out)),'sha256':hashlib.sha256(f.read_bytes()).hexdigest(),'source':origins.get(str(f.relative_to(out)),'asset/license')} for f in sorted(out.rglob('*')) if f.is_file()]}
+manifest={'version':(a.repo/'VERSION').read_text().strip(),'baseline':'Ubuntu 24.04 x86_64','max_glibc':maxv,'input':'focused GTK; Ctrl+Alt+Home opens overlay','presentation':'X11 or XWayland, ximagesink; PulseAudio/PipeWire Pulse','files':[{'path':str(f.relative_to(out)),'sha256':hashlib.sha256(f.read_bytes()).hexdigest(),'source':origins.get(str(f.relative_to(out)),'asset/license')} for f in sorted(out.rglob('*')) if f.is_file()]}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n');print(json.dumps({'files':len(manifest['files']),'max_glibc':maxv}))

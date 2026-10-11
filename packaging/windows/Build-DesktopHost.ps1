@@ -29,10 +29,16 @@ try {
         "-DOPENSSL_ROOT_DIR=$OpenSSLRoot" "-DPKG_CONFIG_EXECUTABLE=$PkgConfigExe" `
         -DREMOTEOS_WITH_MEDIA=ON -DREMOTEOS_WITH_GTK=OFF -DREMOTEOS_WITH_BROWSER=OFF `
         -DREMOTEOS_WITH_SERVICE_HOST=OFF -DREMOTEOS_WITH_DESKTOP_HOST=ON -DREMOTEOS_BUILD_HOST_APP=ON `
-        -DREMOTEOS_BUILD_TESTS=OFF
-    if ($LASTEXITCODE) { throw "CMake configuration failed" }
-    & cmake --build $BuildDirectory --target remoteos-host remoteos-host-app remoteos-runtime-check
-    if ($LASTEXITCODE) { throw "Host application build failed" }
+        -DREMOTEOS_BUILD_TESTS=OFF 2>&1 | Tee-Object -Variable RemoteOSConfigureOutput
+    if ($LASTEXITCODE) {
+        $RemoteOSConfigureOutput | Select-Object -Last 25 | ForEach-Object { Write-Output ("::error::" + $_.ToString().Replace('%','%25')) }
+        throw "CMake configuration failed"
+    }
+    & cmake --build $BuildDirectory --target remoteos-host remoteos-host-app remoteos-runtime-check 2>&1 | Tee-Object -Variable RemoteOSBuildOutput
+    if ($LASTEXITCODE) {
+        $RemoteOSBuildOutput | Where-Object { $_ -match 'error|FAILED|fatal' } | Select-Object -Last 25 | ForEach-Object { Write-Output ("::error::" + $_.ToString().Replace('%','%25')) }
+        throw "Host application build failed"
+    }
     New-Item -ItemType Directory -Path "$OutputDirectory/bin", "$OutputDirectory/lib/gstreamer-1.0" | Out-Null
     Copy-Item "$BuildDirectory/remoteos-host.exe", "$BuildDirectory/remoteos-host-app.exe", "$BuildDirectory/remoteos-runtime-check.exe" "$OutputDirectory/bin"
     Copy-Item "$GStreamerRoot/bin/*.dll" "$OutputDirectory/bin"

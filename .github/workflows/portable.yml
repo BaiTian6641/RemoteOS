@@ -33,7 +33,7 @@ jobs:
           $VS = & $VsWhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           $Cmd = "`"$VS/Common7/Tools/VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
           cmd /s /c $Cmd | ForEach-Object {
-            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+            if ($_ -match '^([^=]+)=(.*)$' -and $Matches[1] -match '^(PATH|INCLUDE|LIB|LIBPATH|VS.*|VC.*|Windows.*|UniversalCRT.*|UCRT.*|ExtensionSdkDir)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
           }
           "REMOTEOS_GSTREAMER_ROOT=$Root" >> $env:GITHUB_ENV
       - name: Native build and portable runtime
@@ -41,7 +41,8 @@ jobs:
         run: |
           $Version = (Get-Content VERSION -Raw).Trim()
           $Package = "$PWD/output/RemoteOS-Host-$Version-windows-x86_64"
-          ./packaging/windows/Build-DesktopHost.ps1 -GStreamerRoot $env:REMOTEOS_GSTREAMER_ROOT -OutputDirectory $Package
+          try { ./packaging/windows/Build-DesktopHost.ps1 -GStreamerRoot $env:REMOTEOS_GSTREAMER_ROOT -OutputDirectory $Package }
+          catch { Write-Output ("::error::" + $_.Exception.Message.Replace('%','%25')); throw }
           Move-Item $env:REMOTEOS_GSTREAMER_ROOT "$env:REMOTEOS_GSTREAMER_ROOT-disabled"
           ./packaging/windows/verify-portable.ps1 -Package $Package
           Compress-Archive -Path $Package -DestinationPath "$Package.zip" -CompressionLevel Optimal
@@ -73,14 +74,14 @@ jobs:
           command -v pkg-config >/dev/null || brew install pkgconf
       - name: Universal app and SDK-free verification
         run: |
-          bash packaging/macos/build-host.sh
+          bash packaging/macos/build-host.sh 2>&1 | tee "$RUNNER_TEMP/macos-build.log" || {
+            tail -40 "$RUNNER_TEMP/macos-build.log" | while IFS= read -r line; do printf '::error::%s\n' "$line"; done
+            exit 1
+          }
           app="output/RemoteOS-Host-$(cat VERSION).app"
           sudo mv /Library/Frameworks/GStreamer.framework "$RUNNER_TEMP/GStreamer-disabled.framework"
           unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GST_REGISTRY_1_0
-          python3 packaging/macos/bundle-runtime.py "$app" --verify
-          "$app/Contents/MacOS/remoteos-runtime-check"
-          "$app/Contents/MacOS/remoteos-host" --help
-          codesign --verify --deep --strict "$app"
+          bash packaging/macos/verify-portable.sh "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$app.zip"
           shasum -a 256 "$app.zip" > "$app.zip.sha256"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -109,10 +110,7 @@ jobs:
         run: |
           app="output/RemoteOS-Host-$(cat VERSION).app"
           ditto -x -k "$app.zip" output
-          python3 packaging/macos/bundle-runtime.py "$app" --verify
-          "$app/Contents/MacOS/remoteos-runtime-check"
-          "$app/Contents/MacOS/remoteos-host" --help
-          codesign --verify --deep --strict "$app"
+          bash packaging/macos/verify-portable.sh "$app"
 
   linux-client:
     runs-on: ubuntu-24.04
@@ -141,6 +139,7 @@ jobs:
           chmod +x "$image"
           "$image" --appimage-extract >/dev/null
           test -x squashfs-root/usr/bin/remoteos-client
+          "$image" --appimage-extract-and-run --help
           sha256sum "$image" > "$image.sha256"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
